@@ -1,0 +1,4 @@
+anthropic>=0.84
+pillow>=10  # optional: downscales screenshots before sending
+cryptography>=42  # relay --lan: TLS certificate
+qrcode>=7  # relay --pair: QR code in the terminal

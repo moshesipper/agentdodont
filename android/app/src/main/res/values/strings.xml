@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Agent Do/Don\'t</string>
+    <string name="screen_service_description">Lets Agent Do/Don\'t operate an app for you when it has no built-in way to do the task: it reads the screen of the app the task opened and taps or types there. It never touches Agent Do/Don\'t itself, the system UI or permission prompts, asks before anything irreversible (send, pay, delete...), and shows a Stop banner while it works.</string>
+</resources>

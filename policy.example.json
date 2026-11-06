@@ -1,0 +1,8 @@
+{
+  "levels": {
+    "open_app": "auto",
+    "tap_unverified": "ask",
+    "irreversible": "ask",
+    "core_surface": "deny"
+  }
+}

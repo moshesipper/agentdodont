@@ -1,0 +1,14 @@
+logs/
+suite_results/
+__pycache__/
+*.pyc
+.relay/
+
+# Secrets: never commit
+android/local.properties
+local.properties
+.env
+*.keystore
+*.jks
+*.pem
+*.key

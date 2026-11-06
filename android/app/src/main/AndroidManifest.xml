@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Cloud model calls (step 4). Disclosed in the UI on every request. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Typed capabilities: alarms via the Clock app; calendar written directly (runtime-granted). -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+    <!-- find_contacts, and the contacts allow-list for drafts in tainted tasks. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+
+    <!-- Android 11+ package visibility: lets us list every app that has a launcher icon. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Aos">
+
+        <!-- Home screen. HOME + DEFAULT make it selectable as the default home app; LAUNCHER also
+             puts an icon in the normal app drawer so it can be tried without switching. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:clearTaskOnLaunch="true"
+            android:stateNotNeeded="true"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection|colorMode|fontWeightAdjustment"
+            android:windowSoftInputMode="adjustResize">
+            <!-- configChanges: as the home screen, Agent Do/Don't must not be torn down and rebuilt when the
+                 user switches dark mode, font size, language or keyboard. A rebuild would cancel a
+                 running agent task and drop an open confirmation. Compose redraws for the new
+                 configuration by itself. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Pairing link from the relay's QR code: agentdodont://pair?... Always confirmed by the user,
+                 since any app or web page can open such a link. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="agentdodont" android:host="pair" />
+            </intent-filter>
+        </activity>
+        <!-- Screen tools (screen-tapping fallback): active only once the user turns it on in
+             Settings > Accessibility. -->
+        <service
+            android:name=".screen.ScreenService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/screen_service" />
+        </service>
+        <!-- read_notifications: active only once the user grants Notification access. -->
+        <service
+            android:name=".NotificationReader"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>

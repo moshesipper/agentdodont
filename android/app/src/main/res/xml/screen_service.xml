@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Screen tools: read the active window's content and act on its nodes. No gestures
+     (canPerformGestures is off), so actions can only target nodes, never coordinates. -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowsChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagRetrieveInteractiveWindows|flagReportViewIds"
+    android:canRetrieveWindowContent="true"
+    android:canPerformGestures="false"
+    android:notificationTimeout="100"
+    android:description="@string/screen_service_description" />
