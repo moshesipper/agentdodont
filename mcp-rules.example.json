@@ -1,0 +1,15 @@
+{
+  "allowed_sites": ["wikipedia.org", "github.com", "docs.python.org"],
+  "blocked_sites": [],
+  "known_recipients": ["dana@example.com", "+44 7700 900123"],
+  "levels": {
+    "read_*": "auto",
+    "delete_*": "ask"
+  },
+  "tools": {
+    "write_file": {"risk": "reversible", "untrusted_output": false, "sends_data_out": false},
+    "send_message": {"destination_args": {"channel": "recipient"}}
+  },
+  "tainted_egress": "deny",
+  "max_calls_per_minute": 30
+}

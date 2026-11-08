@@ -89,7 +89,8 @@ that the result doesn't depend on that.
 and off. With the rules off, all 35 attacks work. With them on, 17 are refused outright, 16
 need your OK, and 2 get through, each a documented limit. Ordinary requests cost 13 questions
 across 28 requests. The benchmark also found a gap (an injection inside the app being operated
-could get an address typed in), now fixed. Method, every scenario and the gaps: [docs/benchmark.md](docs/benchmark.md).
+could get an address typed in), now fixed. In a live run on the phone, the real model resisted 11
+of 12 injections by itself; the one it obeyed (a 3 a.m. alarm) was stopped by the rules. Method, every scenario and the gaps: [docs/benchmark.md](docs/benchmark.md).
 
 **Try to break it.** If you get a harmful action past Agent Do/Don't without a confirmation,
 please report it privately ([SECURITY.md](SECURITY.md)).
@@ -103,9 +104,11 @@ android/        The app: home screen with an intent box, the Claude agent, the r
                 tools (alarms, calendar, URLs, apps, notifications, contacts, email/text drafts),
                 screen operation through accessibility, encrypted memory, History, Undo, pairing.
 agentdodont/    Python: the relay that keeps the API key off the phone (budget, rate limit,
-                QR pairing over pinned TLS, revocable device tokens), plus an experimental
-                laptop agent that drives a phone over ADB.
-tests/          Python tests (relay, pairing, laptop agent).
+                QR pairing over pinned TLS, revocable device tokens); the MCP proxy (the same
+                rules for any MCP agent); and an experimental laptop agent that drives a phone
+                over ADB.
+tests/          Python tests (relay, pairing, MCP proxy, laptop agent).
+tools/          The live benchmark (the real model on a phone, against planted injections).
 docs/           Threat model, benchmark, and every feature in detail with how it was verified.
 ```
 
@@ -153,7 +156,7 @@ it with the phone's camera, then confirm on the phone. After that, `relay --lan`
 
 ```sh
 cd android && ./gradlew testDebugUnitTest    # rules engine, taint, undo, History, screen rules, word lists, memory, pairing
-python -m unittest discover -s tests          # relay, pairing, laptop agent
+python -m unittest discover -s tests          # relay, pairing, MCP proxy, laptop agent
 ```
 
 ---
@@ -165,13 +168,14 @@ python -m unittest discover -s tests          # relay, pairing, laptop agent
 - user-only undo, History with "why", and clearing history with a visible marker;
 - encrypted memory that you can inspect, and that injections can't write to silently;
 - message and email drafts with your contacts as the allow-list;
-- the relay with a budget, a rate limit and pinned Wi-Fi pairing.
+- the relay with a budget, a rate limit and pinned Wi-Fi pairing;
+- **experimental:** an [MCP proxy](docs/mcp-proxy.md) that puts the same rules between any MCP agent
+  (Claude Code, Claude Desktop…) and its tools.
 
 **Next:**
-- [ ] a live benchmark run with the real model
 - [ ] a defense and tests against "action rebinding" (the screen changes between check and tap)
 - [ ] the rules engine as a standalone library, ported to Python, with shared test cases for both versions
-- [ ] an **MCP proxy**: the same rules between any MCP agent and its tools, with no change to the agent
+- [ ] the MCP proxy beyond experimental: one session across several servers, and runs against popular servers and clients
 
 ---
 

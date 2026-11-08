@@ -212,6 +212,11 @@ def cmd_relay(args) -> int:
     return 0
 
 
+def cmd_mcp_proxy(args) -> int:
+    from .mcp_proxy import main as proxy_main  # imported here: the other commands don't need it
+    return proxy_main(args)
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="agentdodont", description="Stage 0: laptop agent driving an Android phone over ADB")
     p.add_argument("--serial", help="adb device serial (when several are connected)")
@@ -265,6 +270,14 @@ def main(argv: list[str] | None = None) -> int:
     lg.add_argument("--list", action="store_true", help="list all sessions")
     lg.add_argument("--log-dir", default="logs")
     lg.set_defaults(fn=cmd_log)
+
+    mp = sub.add_parser("mcp-proxy", help="put the rules engine between an MCP client and an MCP server")
+    mp.add_argument("--rules", help="JSON rules file (levels, allowed_sites, known_recipients, tools...)")
+    mp.add_argument("--name", help="the server's name in questions and the log (default: the command)")
+    mp.add_argument("--log", default=str(__import__("pathlib").Path.home() / ".agentdodont" / "mcp-audit.jsonl"),
+                    help="audit log (JSONL)")
+    mp.add_argument("server", nargs=argparse.REMAINDER, help="-- then the MCP server command and its arguments")
+    mp.set_defaults(fn=cmd_mcp_proxy)
 
     args = p.parse_args(argv)
     for stream in (sys.stdout, sys.stderr):  # Windows consoles default to cp1252; UI text is Unicode
