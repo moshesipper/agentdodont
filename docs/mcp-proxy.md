@@ -18,10 +18,22 @@ servers and clients.
 
 Start the proxy in place of the server, with the server's command after `--`.
 
-Claude Code:
+Claude Code: add it to `.mcp.json` in your project (Claude Code asks you to approve it at the
+next start). `claude mcp add name -- python -m …` doesn't work, because the CLI reads `-m` as its
+own option.
 
-```sh
-claude mcp add fetch -- python -m agentdodont mcp-proxy --rules ~/mcp-rules.json --name fetch -- uvx mcp-server-fetch
+```json
+{
+  "mcpServers": {
+    "fetch": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-m", "agentdodont", "mcp-proxy", "--rules", "/path/to/mcp-rules.json", "--name", "fetch",
+               "--", "uvx", "mcp-server-fetch"],
+      "env": {"PYTHONPATH": "/path/to/agentdodont"}
+    }
+  }
+}
 ```
 
 Claude Desktop (`claude_desktop_config.json`):
@@ -38,8 +50,8 @@ Claude Desktop (`claude_desktop_config.json`):
 }
 ```
 
-Run it from a checkout of this repository, or with it on your `PYTHONPATH`. It needs Python 3.10+
-and nothing else.
+`PYTHONPATH` points at your checkout of this repository. The proxy needs Python 3.10+ and nothing
+else. On Windows, commands like `npx` are found as `npx.cmd` automatically.
 
 ## What it does
 

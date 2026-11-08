@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import itertools
 import json
+import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -202,6 +204,17 @@ def main(args) -> int:
         print("usage: agentdodont mcp-proxy [--rules rules.json] -- <server command ...>", file=sys.stderr)
         return 2
     cmd = args.server[1:] if args.server[0] == "--" else args.server
+    if not cmd:
+        print("usage: agentdodont mcp-proxy [--rules rules.json] -- <server command ...>", file=sys.stderr)
+        return 2
+    # Windows: "npx" is npx.cmd, which CreateProcess won't find by its bare name.
+    resolved = None
+    if os.name == "nt" and not Path(cmd[0]).suffix:  # prefer npx.cmd over the extensionless sh script
+        for ext in os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";"):
+            resolved = resolved or (shutil.which(cmd[0] + ext) if ext else None)
+    resolved = resolved or shutil.which(cmd[0])
+    if resolved:
+        cmd = [resolved, *cmd[1:]]
     config = rules.Config.load(args.rules)
     try:
         sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # the protocol channel: "\n" only
