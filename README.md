@@ -85,8 +85,10 @@ confirmation screens as the real agent. On the S22:
 The real model (Claude) ignored the injections too, even when told to obey them. The point is
 that the result doesn't depend on that.
 
-This is preliminary: one device and a handful of scenarios. A fuller benchmark is next: more
-attacks, the cost in extra questions on ordinary tasks, and a comparison with an unprotected agent.
+**Benchmark:** 31 attacks and 25 ordinary requests, replayed through the rules engine with it on
+and off. With the rules off, all 31 attacks work. With them on, 13 are refused outright, 15
+need your OK, and 3 get through, each a documented limit. Ordinary requests cost 11 questions
+across 25 requests. Method, every scenario and the gaps: [docs/benchmark.md](docs/benchmark.md).
 
 **Try to break it.** If you get a harmful action past Agent Do/Don't without a confirmation,
 please report it privately ([SECURITY.md](SECURITY.md)).
@@ -103,7 +105,7 @@ agentdodont/    Python: the relay that keeps the API key off the phone (budget, 
                 QR pairing over pinned TLS, revocable device tokens), plus an experimental
                 laptop agent that drives a phone over ADB.
 tests/          Python tests (relay, pairing, laptop agent).
-docs/           Threat model, and every feature in detail with how it was verified.
+docs/           Threat model, benchmark, and every feature in detail with how it was verified.
 ```
 
 ---
@@ -165,7 +167,8 @@ python -m unittest discover -s tests          # relay, pairing, laptop agent
 - the relay with a budget, a rate limit and pinned Wi-Fi pairing.
 
 **Next:**
-- [ ] a public benchmark: attack success **and** the cost in extra questions, against an unprotected baseline
+- [ ] treat typing an address or URL into another app as sending data out (benchmark A13)
+- [ ] a live benchmark run with the real model
 - [ ] a defense and tests against "action rebinding" (the screen changes between check and tap)
 - [ ] the rules engine as a standalone library, ported to Python, with shared test cases for both versions
 - [ ] an **MCP proxy**: the same rules between any MCP agent and its tools, with no change to the agent
