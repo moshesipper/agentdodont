@@ -28,7 +28,7 @@ own option.
     "fetch": {
       "type": "stdio",
       "command": "python",
-      "args": ["-m", "agentdodont", "mcp-proxy", "--rules", "/path/to/mcp-rules.json", "--name", "fetch",
+      "args": ["-P", "-m", "agentdodont", "mcp-proxy", "--rules", "/path/to/mcp-rules.json", "--name", "fetch",
                "--", "uvx", "mcp-server-fetch"],
       "env": {"PYTHONPATH": "/path/to/agentdodont"}
     }
@@ -43,14 +43,15 @@ Claude Desktop (`claude_desktop_config.json`):
   "mcpServers": {
     "fetch": {
       "command": "python",
-      "args": ["-m", "agentdodont", "mcp-proxy", "--rules", "/path/to/mcp-rules.json", "--name", "fetch",
+      "args": ["-P", "-m", "agentdodont", "mcp-proxy", "--rules", "/path/to/mcp-rules.json", "--name", "fetch",
                "--", "uvx", "mcp-server-fetch"]
     }
   }
 }
 ```
 
-`PYTHONPATH` points at your checkout of this repository. The proxy needs Python 3.10+ and nothing
+`PYTHONPATH` points at your checkout of this repository, and `-P` (Python 3.11+) stops Python
+from loading a different `agentdodont` folder from the directory the client starts it in. The proxy needs Python 3.10+ and nothing
 else. On Windows, commands like `npx` are found as `npx.cmd` automatically.
 
 ## What it does
