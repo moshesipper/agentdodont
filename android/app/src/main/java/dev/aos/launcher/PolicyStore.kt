@@ -35,7 +35,7 @@ class PolicyStore(context: Context, private val audit: AuditLog) {
         audit.event("policy_change", "blocked_domains" to domains.sorted().joinToString())
     }
 
-    /** Sites a tainted task may send data to (after asking). */
+    /** Sites a tainted task may send data to (after asking); other agent tasks open them without asking. */
     fun setAllowedDomain(domain: String, allowed: Boolean) {
         val cur = prefs.getStringSet("allowed_domains", emptySet())!!.toMutableSet()
         if (allowed) cur += domain else cur -= domain

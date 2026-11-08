@@ -13,7 +13,8 @@ import android.provider.ContactsContract.CommonDataKinds.Phone
  *
  * Drafting is how data leaves the phone, so these are sendsDataOut: in a task that has read
  * untrusted content, a draft to anyone outside the user's contacts is refused, and one to a
- * contact asks first (the contacts are the allow-list, like Policy > Sites for web addresses).
+ * contact asks first (the contacts are the allow-list, like Policy > Sites for web addresses). In
+ * any other agent task, a draft to someone outside the contacts asks first.
  */
 
 /** Normalised forms, so "+44 7700 900123" and "07700900123" compare equal. Pure, tested. */

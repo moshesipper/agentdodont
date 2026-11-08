@@ -190,6 +190,11 @@ entry names it. In a tainted task:
 - notifications from apps on Policy > **Trusted notification sources** don't taint. Trust only
   apps whose notifications nobody else writes (e.g. Clock), never messaging or email.
 
+In a task that hasn't read untrusted content, the agent still **asks** before opening a site that
+isn't on Policy > Sites or drafting to someone who isn't in your contacts, and the question names
+the destination (a model can be malicious before it reads anything). Commands you type yourself,
+such as `open example.com`, don't ask.
+
 Red-team on the S22 (scripted attacker obeying a planted notification): delete and 03:00 alarm
 asked naming the source, the data-leaking URL was refused without a prompt; 0 of 3 went through.
 
@@ -296,7 +301,8 @@ the app this task opened"). 0 of 2 actions went through.
 app (Gmail, Messages) with the draft filled in; **the user presses Send**, seeing the actual
 recipient and text. Agent Do/Don't never sends, and a screen-tool tap on Send counts as irreversible (asks).
 Drafting is how data leaves the phone (`sendsDataOut`): in a task that has read untrusted content,
-a draft to anyone outside the user's contacts is refused and one to a contact asks; the contacts
+a draft to anyone outside the user's contacts is refused and one to a contact asks (in any other
+agent task, a draft to someone outside your contacts asks); the contacts
 are the allow-list, as Policy > Sites is for web addresses (phone numbers compare by their last 9
 digits, emails case-insensitively).
 

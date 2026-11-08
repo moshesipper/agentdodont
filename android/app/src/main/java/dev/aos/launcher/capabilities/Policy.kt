@@ -141,6 +141,20 @@ class Policy(var config: PolicyConfig = PolicyConfig()) {
                         "it may send data to (Policy > Sites)")
                 }
             }
+        } else if (ctx.source == Source.AGENT && cap.sendsDataOut) {
+            // 3b. Untainted, but proposed by the agent: a model can be malicious before reading
+            //     anything (it already knows your memory, contacts, calendar). Sending data anywhere
+            //     you haven't already allowed asks first, naming the destination. What you typed
+            //     yourself (USER_DIRECT) doesn't ask.
+            val dest = cap.destination(args)
+            when {
+                dest == null -> found += Decision(Verdict.ASK, "the agent wants to send data, and Agent Do/Don't can't tell where")
+                dest.recipient && dest.value !in config.knownRecipients ->
+                    found += Decision(Verdict.ASK, "the agent wants to send data to ${dest.value}, who isn't in your contacts")
+                !dest.recipient && config.allowedDomains.none { d -> dest.value == d || dest.value.endsWith(".$d") } ->
+                    found += Decision(Verdict.ASK, "the agent wants to send data to ${dest.value}, which isn't on your " +
+                        "list of sites (Policy > Sites)")
+            }
         }
 
         // 4. Argument rules.

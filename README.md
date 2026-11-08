@@ -25,7 +25,8 @@ because it assumes the model is **already compromised**:
   **tainted**, and the source is named in every question: *"this task has read notifications from Shell"*.
 - **A tainted task can only send data to places you've already allowed.** Your contacts, or
   sites on your list. Anything else is **refused, not asked**, so an injection can't talk you
-  into leaking data with one tired tap.
+  into leaking data with one tired tap. Even before it has read anything, the agent asks before
+  sending data anywhere new.
 - **Some things are never possible.** The agent can't read or operate protected screens and
   controls: Agent Do/Don't itself, permission prompts, factory reset, developer options. These
   are recognized in 18 languages, and in any other language every named tap asks. A **scope
@@ -157,14 +158,13 @@ python -m unittest discover -s tests          # relay, pairing, laptop agent
 ## Status
 
 **Works today:**
-- the rules engine with taint and named sources, outbound allow-lists, protected screens in 18 languages, and the scope lock;
+- the rules engine with taint and named sources, outbound allow-lists (tainted tasks are refused; any other agent task asks), protected screens in 18 languages, and the scope lock;
 - user-only undo, History with "why", and clearing history with a visible marker;
 - encrypted memory that you can inspect, and that injections can't write to silently;
 - message and email drafts with your contacts as the allow-list;
 - the relay with a budget, a rate limit and pinned Wi-Fi pairing.
 
 **Next:**
-- [ ] stricter defaults for untainted tasks (ask before sending data out; see the [threat model](docs/threat-model.md#limits))
 - [ ] a public benchmark: attack success **and** the cost in extra questions, against an unprotected baseline
 - [ ] a defense and tests against "action rebinding" (the screen changes between check and tap)
 - [ ] the rules engine as a standalone library, ported to Python, with shared test cases for both versions

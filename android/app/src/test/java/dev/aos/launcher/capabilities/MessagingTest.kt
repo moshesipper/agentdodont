@@ -25,10 +25,12 @@ class MessagingTest {
         assertTrue(validate(ComposeMessage, mapOf("to" to "Dana", "text" to "x")) is Validation.Invalid)
     }
 
-    @Test fun draftsRunInANormalTask() {
-        val p = Policy()
+    @Test fun draftsToContactsRunInANormalTask() {
+        val p = Policy(PolicyConfig(knownRecipients = setOf("a@b.co", Recipients.normalize("07700900123"))))
         assertEquals(Verdict.AUTO, p.decide(ComposeEmail, args(ComposeEmail, mapOf("to" to "a@b.co", "body" to "hi")), agent).verdict)
         assertEquals(Verdict.AUTO, p.decide(ComposeMessage, args(ComposeMessage, mapOf("to" to "07700900123", "text" to "hi")), agent).verdict)
+        // Anyone else asks first, even in a normal task.
+        assertEquals(Verdict.ASK, p.decide(ComposeEmail, args(ComposeEmail, mapOf("to" to "x@y.co", "body" to "hi")), agent).verdict)
     }
 
     @Test fun inATaintedTaskOnlyContactsAndOnlyAfterAsking() {

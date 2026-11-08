@@ -740,7 +740,7 @@ class MainActivity : ComponentActivity() {
             maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 
-    /** Sites a task that has read untrusted content may still send data to (after asking). */
+    /** Sites a tainted task may still send data to (after asking), and any agent task may open without asking. */
     @Composable
     private fun SitesSection() {
         val muted = MaterialTheme.colorScheme.onSurfaceVariant
@@ -749,7 +749,8 @@ class MainActivity : ComponentActivity() {
         Text(
             "Once a task has read untrusted content (notifications, invitations), opening a web address " +
                 "could send what it read to that site. Such a task may only open the sites below, and asks " +
-                "you first. Every other site is refused.",
+                "you first. Every other site is refused. In any other task, the agent asks before opening a " +
+                "site that isn't on this list.",
             color = muted, fontSize = 13.sp,
         )
         for (d in policyConfig.allowedDomains.sorted()) {

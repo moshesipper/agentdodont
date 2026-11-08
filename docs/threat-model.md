@@ -31,7 +31,7 @@ fully hijacked model would (see [Evidence](#evidence)).
 | **Hijacked model** | Do anything the injected text says, through any tool, in any order | **Yes** |
 | **Another app on the phone** | Send intents to Agent Do/Don't (for example a forged pairing link), or draw over the screen | Yes, for the cases below |
 | **Someone on your home network** | Pretend to be the relay, or try to pair with it | Yes |
-| **A model malicious from the start** | Misbehave without having read any untrusted content | **Partly** (see [Limits](#limits)) |
+| **A model malicious from the start** | Misbehave without having read any untrusted content | **Partly**: sending data anywhere new asks (see [Limits](#limits)) |
 | **Someone holding your unlocked phone, root or malware with system privileges, a malicious accessibility service you installed** | Bypass any app-level control | No |
 | **Whoever controls the computer running the relay** | Read the API key and use the budget | No: the relay host is trusted |
 
@@ -47,6 +47,7 @@ fully hijacked model would (see [Evidence](#evidence)).
 - Tools that can carry data off the phone (open a URL, draft an email or a text) declare a destination.
 - In a tainted task, a URL must be on **Policy › Sites**, and a recipient must be **in your contacts**. Otherwise the call is **refused, not asked**. If the destination can't be determined, it's refused.
 - Even allowed destinations still ask.
+- In a task that *hasn't* read untrusted content, the agent still **asks** before sending data to a site that isn't on the list or to someone who isn't in your contacts, and the question names the destination. Commands you type yourself don't ask.
 - Drafts never send: the email or messaging app opens with the draft, and you press Send.
 
 **G3. Irreversible actions always ask.** Anything the agent proposes that can't be undone, such as
@@ -104,11 +105,11 @@ These are known limits, not bugs. Reports that improve on them are welcome.
   changes what an element does between the read and the tap (time-of-check to time-of-use), the
   check can be wrong. We do check that the same app is still in front, but not that the element
   is unchanged.
-- **A model malicious from the start.** The guarantees above apply once the task is tainted.
-  An *untainted* task runs reversible actions automatically by default (each with an undo), and
-  can open URLs or draft to anyone. A model that was malicious before reading anything could
-  misuse that, for example sending what it already knows (memory, contacts) to a URL. You can
-  set any tool to "Ask me" in Policy. Tightening the defaults is on the roadmap.
+- **A model malicious from the start.** Most guarantees above apply once the task is tainted.
+  An *untainted* task runs reversible actions automatically by default (each with an undo). It
+  can't send data anywhere new without asking (G2), but it can still send to places you've
+  allowed (your contacts, sites on your list) without asking, and a question you approve
+  without reading lets data through. You can set any tool to "Ask me" in Policy.
 - **Trusted apps.** Marking an app as trusted means its notifications don't taint. If that app
   shows content written by others (most messaging apps do), an injection through it won't be
   caught. Only trust apps that show content you or your organisation wrote.
