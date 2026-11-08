@@ -111,7 +111,7 @@ private val WHY_COMMAND = Regex("^(why( did you do (that|this|it))?|history)[?.!
 private val MEMORY_COMMAND = Regex("^(memory|what do you (remember|know)( about me)?)[?.!]*$", RegexOption.IGNORE_CASE)
 
 /** Whether Claude can be reached right now (shown at the top of the home screen). */
-private enum class ClaudeLink { CHECKING, CONNECTED, WIFI, NO_RELAY, NOT_PAIRED }
+private enum class ClaudeLink { CHECKING, CONNECTED, WIFI, USB_FALLBACK, NO_RELAY, NOT_PAIRED }
 
 /** "unpair": forget the Wi-Fi pairing and go back to the USB relay. */
 private val UNPAIR_COMMAND = Regex("^unpair[.!]?$", RegexOption.IGNORE_CASE)
@@ -155,9 +155,24 @@ class MainActivity : ComponentActivity() {
     private var agentCache: Pair<String, Agent>? = null
     private var claudeLink by mutableStateOf(ClaudeLink.CHECKING)
 
-    /** Off the main thread: is the relay up, and does this app hold a token for it? */
+    /**
+     * Off the main thread: which relay can Claude be reached through right now? A paired Wi-Fi relay
+     * is preferred; if it doesn't answer (laptop off the network, new IP address) but the USB relay
+     * does, the phone falls back to USB until the next probe finds the Wi-Fi relay again.
+     */
     private fun probeClaude(): ClaudeLink {
-        PairingStore.load(this)?.let { return if (PairingStore.healthy(it)) ClaudeLink.WIFI else ClaudeLink.NO_RELAY }
+        val paired = PairingStore.load(this)
+        if (paired != null && PairingStore.healthy(paired)) return ClaudeLink.WIFI
+        val usb = probeUsb()
+        return when {
+            paired == null -> usb
+            usb == ClaudeLink.CONNECTED -> ClaudeLink.USB_FALLBACK
+            else -> ClaudeLink.NO_RELAY
+        }
+    }
+
+    /** Is the USB relay up, and does this app hold a token for it? */
+    private fun probeUsb(): ClaudeLink {
         val token = try {
             File(filesDir, "relay_token").readText().trim()
         } catch (_: IOException) {
@@ -183,8 +198,8 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch { claudeLink = withContext(Dispatchers.IO) { probeClaude() } }
     }
     private fun currentAgent(): Agent? {
-        // Paired over Wi-Fi wins over the USB relay (debug builds).
-        PairingStore.load(this)?.let { p ->
+        // Paired over Wi-Fi wins over the USB relay, unless the last probe found only USB answering.
+        PairingStore.load(this)?.takeIf { claudeLink != ClaudeLink.USB_FALLBACK }?.let { p ->
             val credential = "paired:${p.token}"
             agentCache?.let { (c, a) -> if (c == credential) return a }
             return Agent(audit, p.token, relayUrl = p.url, pinnedFingerprint = p.fingerprint).also { agentCache = credential to it }
@@ -717,11 +732,12 @@ class MainActivity : ComponentActivity() {
             ClaudeLink.CHECKING -> "" to MaterialTheme.colorScheme.onSurfaceVariant
             ClaudeLink.CONNECTED -> "● Claude connected" to Color(0xFF7FD48A)
             ClaudeLink.WIFI -> "● Claude connected (Wi-Fi)" to Color(0xFF7FD48A)
+            ClaudeLink.USB_FALLBACK -> "● Claude connected (USB fallback)" to Color(0xFF7FD48A)
             ClaudeLink.NO_RELAY -> "○ Laptop relay not reachable · local commands only" to MaterialTheme.colorScheme.onSurfaceVariant
             ClaudeLink.NOT_PAIRED -> "○ Not paired with the laptop relay · local commands only" to MaterialTheme.colorScheme.onSurfaceVariant
         }
         Text(text, modifier.semantics { contentDescription = "Claude status: $text" }, color = color, fontSize = 12.sp,
-            maxLines = 2)
+            maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 
     /** Sites a task that has read untrusted content may still send data to (after asking). */
