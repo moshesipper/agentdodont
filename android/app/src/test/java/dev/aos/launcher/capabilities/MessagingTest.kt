@@ -52,4 +52,43 @@ class MessagingTest {
         val p2 = Policy(PolicyConfig(knownRecipients = setOf("evil.example")))
         assertEquals(Verdict.DENY, p2.decide(OpenUrl, args(OpenUrl, mapOf("url" to "evil.example")), tainted).verdict)
     }
+
+    @Test fun addressesInTypedText() {
+        fun found(t: String) = TypedAddresses.find(t).map { it.value }
+        assertEquals(listOf("helpdesk@evil.example"), found("helpdesk@evil.example"))
+        assertEquals(listOf("evil.example"), found("evil.example/?d=Gym,Dentist"))
+        assertEquals(listOf("evil.example"), found("go to https://Evil.Example/x now"))
+        assertEquals(listOf(Recipients.normalize("+15550100222")), found("+1 (555) 010-0222"))
+        assertEquals(listOf("dana@example.com"), found("Dana@Example.com")) // not also "example.com"
+        // Ordinary text isn't an address.
+        for (t in listOf("octopus facts", "Meeting at 10:30", "2026-11-10", "10/11/2026", "Room 12", "Running late. See you")) {
+            assertTrue(t, found(t).isEmpty())
+        }
+    }
+
+    @Test fun typingAnAddressIntoAnotherAppIsSendingDataOut() {
+        val p = Policy(PolicyConfig(allowedDomains = setOf("wikipedia.org"), knownRecipients = setOf("dana@example.com")))
+        val ok = dev.aos.launcher.screen.Element(1, "android.widget.EditText", "To", "", "", true, true, false, null, false, 0, 0, 1, 1)
+        dev.aos.launcher.screen.ScreenState.foreground = "com.google.android.gm"
+        dev.aos.launcher.screen.ScreenState.last = dev.aos.launcher.screen.Snapshot("com.google.android.gm", "Gmail", listOf(ok), 0)
+        try {
+            val inGmail = agent.copy(tainted = true, taintSources = listOf("the screen of Gmail"),
+                operatedApp = "com.google.android.gm", operatedAppLabel = "Gmail")
+            fun type(text: String, ctx: CallContext) =
+                p.decide(dev.aos.launcher.screen.TypeText, args(dev.aos.launcher.screen.TypeText, mapOf("element" to 1, "text" to text)), ctx)
+            // The operated app's own screen counts here: that's where the injection would be.
+            val evil = type("helpdesk@evil.example", inGmail)
+            assertEquals(Verdict.DENY, evil.verdict)
+            assertTrue(evil.rule, evil.rule.contains("helpdesk@evil.example") && evil.rule.contains("the screen of Gmail"))
+            assertEquals(Verdict.ASK, type("dana@example.com", inGmail).verdict)
+            assertEquals(Verdict.AUTO, type("Running late", inGmail).verdict)
+            // Untainted: a new address asks; a contact doesn't.
+            val clean = agent.copy(operatedApp = "com.google.android.gm", operatedAppLabel = "Gmail")
+            assertEquals(Verdict.ASK, type("mallory@evil.example", clean).verdict)
+            assertEquals(Verdict.AUTO, type("dana@example.com", clean).verdict)
+        } finally {
+            dev.aos.launcher.screen.ScreenState.foreground = null
+            dev.aos.launcher.screen.ScreenState.last = null
+        }
+    }
 }

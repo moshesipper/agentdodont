@@ -107,6 +107,27 @@ class Policy(var config: PolicyConfig = PolicyConfig()) {
         }
         val tainted = ctx.tainted && (cap !is ScreenCapability || taintSources.isNotEmpty())
 
+        // 0b. Typing an address into another app (a forwarding field, an address bar) can send data
+        //     there, so it's treated like sending data out. Here the operated app's own screen
+        //     *does* count as untrusted content: that's where an injection asking for it would be.
+        if (cap.name == "type_text") {
+            val typed = TypedAddresses.find(args.string("text"))
+            val app = ScreenState.last?.appLabel ?: ctx.operatedAppLabel ?: "the app"
+            val read = "this task has read untrusted content (" +
+                (ctx.taintSources.distinct().joinToString().ifEmpty { "e.g. a message or web page" }) + ")"
+            for (dest in typed) {
+                val allowed = if (dest.recipient) dest.value in config.knownRecipients else allowedSite(dest.value)
+                val what = if (dest.recipient) "who isn't in your contacts" else "which isn't on your list of sites (Policy > Sites)"
+                found += when {
+                    ctx.tainted && allowed -> Decision(Verdict.ASK, "typing ${dest.value} into $app could send data there; $read")
+                    ctx.tainted -> Decision(Verdict.DENY, "typing ${dest.value} into $app could send data there, $what; $read")
+                    ctx.source == Source.AGENT && !allowed ->
+                        Decision(Verdict.ASK, "typing ${dest.value} into $app could send data there, $what")
+                    else -> continue
+                }
+            }
+        }
+
         // 1. Level: the user's setting, else the default for the risk.
         val user = config.levels[cap.name]
         found += if (user != null) {
@@ -135,7 +156,7 @@ class Policy(var config: PolicyConfig = PolicyConfig()) {
                     dest.recipient && dest.value in config.knownRecipients ->
                         Decision(Verdict.ASK, "$read, and this would send data to ${dest.value}, one of your contacts")
                     dest.recipient -> Decision(Verdict.DENY, "$read, and ${dest.value} isn't in your contacts")
-                    config.allowedDomains.any { d -> dest.value == d || dest.value.endsWith(".$d") } ->
+                    allowedSite(dest.value) ->
                         Decision(Verdict.ASK, "$read, and this would send data to ${dest.value}")
                     else -> Decision(Verdict.DENY, "$read, and ${dest.value} isn't on your list of sites " +
                         "it may send data to (Policy > Sites)")
@@ -151,7 +172,7 @@ class Policy(var config: PolicyConfig = PolicyConfig()) {
                 dest == null -> found += Decision(Verdict.ASK, "the agent wants to send data, and Agent Do/Don't can't tell where")
                 dest.recipient && dest.value !in config.knownRecipients ->
                     found += Decision(Verdict.ASK, "the agent wants to send data to ${dest.value}, who isn't in your contacts")
-                !dest.recipient && config.allowedDomains.none { d -> dest.value == d || dest.value.endsWith(".$d") } ->
+                !dest.recipient && !allowedSite(dest.value) ->
                     found += Decision(Verdict.ASK, "the agent wants to send data to ${dest.value}, which isn't on your " +
                         "list of sites (Policy > Sites)")
             }
@@ -176,6 +197,8 @@ class Policy(var config: PolicyConfig = PolicyConfig()) {
         val verdict = found.maxOf { it.verdict }
         return Decision(verdict, found.filter { it.verdict == verdict }.joinToString("; ") { it.rule })
     }
+
+    private fun allowedSite(host: String) = config.allowedDomains.any { d -> host == d || host.endsWith(".$d") }
 
     /** Call when a capability actually executes (feeds the rate limit). */
     fun record(cap: Capability, nowMs: Long = System.currentTimeMillis()) {

@@ -17,6 +17,31 @@ import android.provider.ContactsContract.CommonDataKinds.Phone
  * any other agent task, a draft to someone outside the contacts asks first.
  */
 
+/**
+ * Addresses inside free text: what typing [text] into another app could send somewhere (an email
+ * address in a forwarding field, a URL in an address bar, a number in a dialler). Pure, tested.
+ * Deliberately broad: a false match only means a question, or a refusal in a tainted task.
+ */
+object TypedAddresses {
+    private val EMAIL = Regex("""[^\s@<>()"',;:]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+""")
+    private val HOST = Regex("""(?i)\b(?:https?://)?((?:[a-z0-9-]+\.)+[a-z]{2,24})\b""")
+    private val PHONE = Regex("""\+?\d[\d\s\-().]{5,22}\d""")
+    private val DATE = Regex("""^\d{4}-\d{2}-\d{2}|^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$""")
+
+    fun find(text: String): List<Destination> {
+        val out = mutableListOf<Destination>()
+        val emails = EMAIL.findAll(text).map { it.value }.toList()
+        emails.forEach { out += Destination(Recipients.normalize(it), recipient = true) }
+        var rest = text
+        emails.forEach { rest = rest.replace(it, " ") }
+        HOST.findAll(rest).forEach { out += Destination(it.groupValues[1].lowercase(), recipient = false) }
+        PHONE.findAll(rest).map { it.value.trim() }
+            .filter { it.count(Char::isDigit) in 7..15 && !DATE.containsMatchIn(it) }
+            .forEach { out += Destination(Recipients.normalize(it), recipient = true) }
+        return out.distinct()
+    }
+}
+
 /** Normalised forms, so "+44 7700 900123" and "07700900123" compare equal. Pure, tested. */
 object Recipients {
     private val EMAIL = Regex("""^[^\s@]+@[^\s@]+\.[^\s@]+$""")

@@ -25,8 +25,8 @@ because it assumes the model is **already compromised**:
   **tainted**, and the source is named in every question: *"this task has read notifications from Shell"*.
 - **A tainted task can only send data to places you've already allowed.** Your contacts, or
   sites on your list. Anything else is **refused, not asked**, so an injection can't talk you
-  into leaking data with one tired tap. Even before it has read anything, the agent asks before
-  sending data anywhere new.
+  into leaking data with one tired tap. Typing an address or URL into another app counts too.
+  Even before it has read anything, the agent asks before sending data anywhere new.
 - **Some things are never possible.** The agent can't read or operate protected screens and
   controls: Agent Do/Don't itself, permission prompts, factory reset, developer options. These
   are recognized in 18 languages, and in any other language every named tap asks. A **scope
@@ -85,10 +85,11 @@ confirmation screens as the real agent. On the S22:
 The real model (Claude) ignored the injections too, even when told to obey them. The point is
 that the result doesn't depend on that.
 
-**Benchmark:** 31 attacks and 25 ordinary requests, replayed through the rules engine with it on
-and off. With the rules off, all 31 attacks work. With them on, 13 are refused outright, 15
-need your OK, and 3 get through, each a documented limit. Ordinary requests cost 11 questions
-across 25 requests. Method, every scenario and the gaps: [docs/benchmark.md](docs/benchmark.md).
+**Benchmark:** 35 attacks and 28 ordinary requests, replayed through the rules engine with it on
+and off. With the rules off, all 35 attacks work. With them on, 17 are refused outright, 16
+need your OK, and 2 get through, each a documented limit. Ordinary requests cost 13 questions
+across 28 requests. The benchmark also found a gap (an injection inside the app being operated
+could get an address typed in), now fixed. Method, every scenario and the gaps: [docs/benchmark.md](docs/benchmark.md).
 
 **Try to break it.** If you get a harmful action past Agent Do/Don't without a confirmation,
 please report it privately ([SECURITY.md](SECURITY.md)).
@@ -167,7 +168,6 @@ python -m unittest discover -s tests          # relay, pairing, laptop agent
 - the relay with a budget, a rate limit and pinned Wi-Fi pairing.
 
 **Next:**
-- [ ] treat typing an address or URL into another app as sending data out (benchmark A13)
 - [ ] a live benchmark run with the real model
 - [ ] a defense and tests against "action rebinding" (the screen changes between check and tap)
 - [ ] the rules engine as a standalone library, ported to Python, with shared test cases for both versions
