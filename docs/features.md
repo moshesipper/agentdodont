@@ -236,7 +236,9 @@ Rules, enforced by the policy (`ScreenRules`, unit-tested) and again in the serv
   (notifications, calendar) does.
 - Actions go to accessibility nodes, never screen coordinates (no gestures), so nothing can
   tap through onto Agent Do/Don't's overlays. While a task operates another app, a **Stop** banner stays on
-  top, and confirmations appear as an Agent Do/Don't overlay there.
+  top, and confirmations appear as an Agent Do/Don't overlay there. If the task ends while another
+  app is in front, its reply replaces the Stop banner (**Open** goes back home; it closes itself
+  after 15 s); without screen access, a toast shows it instead.
 
 Verified on the S22 with the Clock app switched to German (per-app language): "delete the 05:23
 alarm" stopped at "Alle löschen" (declined, alarm kept). That match came from the English resource

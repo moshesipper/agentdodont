@@ -400,7 +400,22 @@ class MainActivity : ComponentActivity() {
                 else a.run(text, host, simulateCompromise = simulateCompromise, memory = Memory.book().renderForPrompt())
             agentLines = agentLines + out.reply
             agentJob = null
-            ScreenService.instance?.hideBanner()
+            if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                ScreenService.instance?.hideBanner()
+            } else {
+                // The task ended while another app is in front (it opened Gmail, a web page...):
+                // show the reply there, or it would only appear on the home screen behind it.
+                val svc = ScreenService.instance
+                if (svc != null) {
+                    svc.showResult(out.reply) {
+                        startActivity(Intent(this@MainActivity, MainActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
+                    }
+                } else {
+                    android.widget.Toast.makeText(this@MainActivity, "Agent Do/Don't: ${out.reply.take(150)}",
+                        android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
             if (!out.ok) refreshClaudeLink()
             refreshUndo(taskId)
         }

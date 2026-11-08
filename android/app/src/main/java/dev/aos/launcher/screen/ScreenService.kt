@@ -205,6 +205,41 @@ class ScreenService : AccessibilityService() {
         banner = row
     }
 
+    /**
+     * The task's final reply, across the top of whatever app is in front (it ended while another
+     * app was showing, so the home screen's reply would go unseen). Open goes back to Agent Do/Don't.
+     * Replaces the Stop banner, and dismisses itself after 15 s.
+     */
+    fun showResult(reply: String, onOpen: () -> Unit) = main.post {
+        hideBannerNow()
+        lateinit var row: View
+        fun dismiss() { if (banner === row) hideBannerNow() }
+        row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(Color.argb(240, 40, 30, 70))
+            setPadding(dp(16), dp(28), dp(8), dp(8))
+            gravity = Gravity.CENTER_VERTICAL
+            addView(TextView(context).apply {
+                text = "Agent Do/Don't: ${reply.take(300)}"
+                setTextColor(Color.WHITE)
+                textSize = 13f
+                maxLines = 5
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            // Compact buttons, so the reply gets most of the width.
+            fun small(label: String, size: Float, onClick: () -> Unit) = Button(context).apply {
+                text = label; textSize = size; isAllCaps = false
+                minWidth = 0; minimumWidth = 0; minHeight = 0; minimumHeight = 0
+                setPadding(dp(10), dp(6), dp(10), dp(6))
+                setOnClickListener { onClick() }
+            }
+            addView(small("Open", 12f) { dismiss(); onOpen() })
+            addView(small("✕", 14f) { dismiss() })
+        }
+        getSystemService(WindowManager::class.java).addView(row, overlayParams(Gravity.TOP, touchModal = false))
+        banner = row
+        main.postDelayed({ dismiss() }, 15_000)
+    }
+
     fun hideBanner() = main.post { hideBannerNow() }
 
     private fun hideBannerNow() {
