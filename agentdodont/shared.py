@@ -26,9 +26,10 @@ import sys
 import time
 from pathlib import Path
 
-# Processes between the client and the proxy that aren't the client itself.
+# Processes between the client and the proxy that aren't the client itself. "agentdodont" is the
+# proxy's own launcher: on Windows, pip and uvx install it as agentdodont.exe, which starts Python.
 _LAUNCHERS = re.compile(r"^(cmd|conhost|powershell|pwsh|sh|bash|zsh|dash|fish|ksh|env|nohup|sudo|uv|uvx|"
-                        r"pipx|py|pyw|python[\d.]*w?|pythonw)$")
+                        r"pipx|py|pyw|python[\d.]*w?|pythonw|agentdodont)$")
 
 
 def _proc_windows(pid: int):
@@ -97,6 +98,42 @@ def _proc_ps(pid: int):
     if len(out) < 7:
         return None
     return int(out[0]), os.path.basename(" ".join(out[6:])), re.sub(r"\W", "", "".join(out[1:6]))
+
+
+def append_line(path, line: str) -> None:
+    """Append one line so that other processes appending to the same file can't overwrite it.
+
+    Several proxies write to the same audit log and session file. Python's append mode isn't
+    safe for that on Windows: it seeks to the end, then writes, so two processes can write to the
+    same spot and a line is lost. Here every line is a single write that the OS itself puts at
+    the end: a file opened with append-only access on Windows, O_APPEND elsewhere."""
+    data = (line + "\n").encode("utf-8")
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.CreateFileW.restype = wintypes.HANDLE
+        k32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
+                                    wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+        k32.WriteFile.argtypes = [wintypes.HANDLE, ctypes.c_char_p, wintypes.DWORD,
+                                  ctypes.POINTER(wintypes.DWORD), wintypes.LPVOID]
+        k32.CloseHandle.argtypes = [wintypes.HANDLE]
+        # FILE_APPEND_DATA only (no FILE_WRITE_DATA); share read/write/delete; OPEN_ALWAYS
+        h = k32.CreateFileW(str(path), 0x0004, 0x7, None, 4, 0x80, None)
+        if h is None or h == wintypes.HANDLE(-1).value:
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            done = wintypes.DWORD()
+            if not k32.WriteFile(h, data, len(data), ctypes.byref(done), None) or done.value != len(data):
+                raise ctypes.WinError(ctypes.get_last_error())
+        finally:
+            k32.CloseHandle(h)
+    else:
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        try:
+            os.write(fd, data)
+        finally:
+            os.close(fd)
 
 
 def proc_info(pid: int):
@@ -194,5 +231,4 @@ class SharedTaint:
         if not self.path:
             return
         line = json.dumps({"t": round(time.time(), 3), "server": server, "source": source}, ensure_ascii=False)
-        with open(self.path, "a", encoding="utf-8") as f:  # one short append: no lock needed
-            f.write(line + "\n")
+        append_line(self.path, line)

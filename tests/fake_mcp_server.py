@@ -15,6 +15,10 @@ TOOLS = [
      "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False}},
     {"name": "delete_note", "description": "Delete a note.", "inputSchema": {"type": "object", "properties": {}},
      "annotations": {"readOnlyHint": False, "destructiveHint": True, "openWorldHint": False}},
+    # Asks its own question first (2026-07-28 multi round-trip requests), like a server that
+    # needs a confirmation code.
+    {"name": "archive_notes", "description": "Archive all notes.", "inputSchema": {"type": "object", "properties": {}},
+     "annotations": {"readOnlyHint": False, "destructiveHint": True, "openWorldHint": False}},
 ]
 
 for line in sys.stdin:
@@ -25,8 +29,16 @@ for line in sys.stdin:
     method, mid = msg.get("method"), msg.get("id")
     if method == "initialize":
         result = {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}}, "serverInfo": {"name": "fake", "version": "1"}}
+    elif method == "server/discover":
+        result = {"resultType": "complete", "supportedVersions": ["2026-07-28"], "capabilities": {"tools": {}}}
     elif method == "tools/list":
         result = {"tools": TOOLS}
+    elif (method == "tools/call" and msg["params"]["name"] == "archive_notes"
+          and not (msg["params"].get("requestState") == "srv-state"
+                   and (msg["params"].get("inputResponses") or {}).get("srv_code", {}).get("action") == "accept")):
+        result = {"resultType": "input_required", "requestState": "srv-state", "inputRequests": {"srv_code": {
+            "method": "elicitation/create", "params": {"mode": "form", "message": "Confirmation code?",
+                                                       "requestedSchema": {"type": "object", "properties": {}}}}}}
     elif method == "tools/call":
         with open(LOG, "a", encoding="utf-8") as f:
             f.write(json.dumps(msg["params"]) + "\n")

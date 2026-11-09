@@ -77,7 +77,16 @@ directory the client starts it in.
   irreversible tool below "ask"; if you know a tool is safe, change its `risk` instead.
 - **Asking.** Questions go to you through the client, using MCP *elicitation*. If the client
   doesn't support elicitation, a call that would ask is refused instead, and the agent is told
-  why. It never runs silently.
+  why. It never runs silently. The proxy asks the way the client's MCP version expects:
+  - **MCP 2025-11-25 and earlier:** as a separate request to the client.
+  - **MCP 2026-07-28 (current Claude Code):** the call's result is "input required", with the
+    question. The client asks you, then retries the call with your answer.
+
+    Your answer travels with a state the proxy signed, which names the exact call and expires
+    after 15 minutes. A changed, reused or expired answer just brings the question back. If
+    the server then asks a question of its own, you aren't asked about the call again.
+
+  A question that's dismissed or can't be shown (as in `claude -p`) counts as a no.
 - **Refusing.** A refused call never reaches the server. The agent gets an error result saying
   why, and an instruction not to try another way.
 - **Log.** Every decision, answer and result goes to `~/.agentdodont/mcp-audit.jsonl` (or the

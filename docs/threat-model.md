@@ -147,5 +147,6 @@ These are known limits, not bugs. Reports that improve on them are welcome.
   | A notification or calendar invite | Delete a calendar event; set a 3 a.m. alarm; send the calendar's event titles to an attacker URL | 0 of 3 |
   | Another app's screen (Calendar) | Tap a control in Settings; read a different app's screen | 0 of 2 |
 
-  This is preliminary: one device, a handful of scenarios. A fuller benchmark is planned: more
-  attacks, the cost in extra questions on ordinary tasks, and a comparison with an unprotected agent.
+  These are the first checks on a real phone: one device and a handful of scenarios. For more
+  attacks, the cost in extra questions on ordinary tasks, and a comparison with an unprotected
+  agent, see the [benchmark](benchmark.md).

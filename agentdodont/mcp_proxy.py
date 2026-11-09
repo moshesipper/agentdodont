@@ -16,11 +16,22 @@ Everything passes through unchanged except tools/call, which goes through the ru
     client can't ask, the call is refused and the reason says so;
   - refuse: never reaches the server; the agent gets an error result explaining why.
 
-The proxy talks JSON-RPC directly (no SDK), so it doesn't depend on a protocol version. Nothing
-but protocol messages is written to stdout; the audit log is a JSONL file.
+Two ways of asking, matching the client's protocol version:
+  - up to 2025-11-25 (the client sends `initialize`): an elicitation/create request to the client;
+  - from 2026-07-28 (capabilities in each request's _meta, no `initialize`): multi round-trip
+    requests. The call's result is "input_required" with the question and a signed requestState;
+    the client asks you and retries the call with your answer. The state is signed with a key
+    only this proxy process knows and names the tool, a digest of its exact arguments and an
+    expiry, and each one works once, so neither the agent nor a forged retry can approve a call.
+
+The proxy talks JSON-RPC directly (no SDK). Nothing but protocol messages is written to stdout;
+the audit log is a JSONL file.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import itertools
 import json
 import os
@@ -32,7 +43,14 @@ import time
 from pathlib import Path
 
 from . import presets, rules
-from .shared import SharedTaint
+from .shared import SharedTaint, append_line
+
+_META_CAPS = "io.modelcontextprotocol/clientCapabilities"
+_META_VERSION = "io.modelcontextprotocol/protocolVersion"
+_META_CLIENT = "io.modelcontextprotocol/clientInfo"
+_ASK_KEY = "agentdodont_approval"  # our key in inputRequests / inputResponses
+_STATE_PREFIX = "agentdodont1."  # our requestState; anything else belongs to the server
+_STATE_TTL = 15 * 60  # seconds you have to answer a question
 
 
 class Proxy:
@@ -57,7 +75,12 @@ class Proxy:
         self.pending_list: set = set()  # ids of tools/list requests
         self.pending_calls: dict = {}  # forwarded tools/call id -> tool
         self.pending_asks: dict = {}  # our elicitation id -> (original request, tool, decision)
+        self.approved_calls: set = set()  # forwarded ids you approved (2026-07-28 protocol)
+        self.call_args: dict = {}  # forwarded tools/call id -> (name, arguments)
         self.ids = itertools.count(1)
+        self.started = False  # session_start logged
+        self.secret = os.urandom(32)  # signs our requestState; never leaves this process
+        self.used_states: set = set()  # nonces already redeemed
 
     # --- plumbing -------------------------------------------------------------------------
     def to_client(self, msg: dict) -> None:
@@ -72,8 +95,8 @@ class Proxy:
 
     def log(self, **fields) -> None:
         fields = {"t": round(time.time(), 3), "server": self.name, **fields}
-        with self.log_lock, open(self.log_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(fields, ensure_ascii=False) + "\n")
+        with self.log_lock:
+            append_line(self.log_path, json.dumps(fields, ensure_ascii=False))
 
     def tool(self, name: str) -> rules.Tool:
         t = self.tools.get(name)
@@ -87,17 +110,71 @@ class Proxy:
         if method is None and "id" in msg and msg["id"] in self.pending_asks:
             self.on_answer(msg)
             return
+        params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
+        meta = params.get("_meta") if isinstance(params.get("_meta"), dict) else {}
         if method == "initialize":
-            caps = (msg.get("params") or {}).get("capabilities") or {}
+            caps = params.get("capabilities") or {}
             self.client_can_ask = "elicitation" in caps
-            self.log(kind="session_start", client_can_ask=self.client_can_ask, shared_with=self.shared.label,
-                     preset=self.preset)
-        elif method == "tools/list" and "id" in msg:
+            self.start_session(params.get("protocolVersion"), params.get("clientInfo"), self.client_can_ask)
+        elif not self.started and _META_VERSION in meta:  # 2026-07-28 and later: no initialize
+            self.start_session(meta.get(_META_VERSION), meta.get(_META_CLIENT), self.can_ask(params))
+        if method == "tools/list" and "id" in msg:
             self.pending_list.add(msg["id"])
         elif method == "tools/call" and "id" in msg:
             self.on_call(msg)
             return
         self.to_server(msg)
+
+    def start_session(self, version, client_info, can_ask: bool) -> None:
+        self.started = True
+        client = client_info.get("name") if isinstance(client_info, dict) else None
+        self.log(kind="session_start", client=client, protocol=version, client_can_ask=can_ask,
+                 shared_with=self.shared.label, preset=self.preset)
+
+    @staticmethod
+    def uses_mrtr(params: dict) -> bool:
+        """True if this request comes from a 2026-07-28+ client (capabilities in _meta)."""
+        meta = params.get("_meta")
+        return isinstance(meta, dict) and isinstance(meta.get(_META_CAPS), dict)
+
+    def can_ask(self, params: dict) -> bool:
+        if not self.uses_mrtr(params):
+            return self.client_can_ask
+        el = params["_meta"][_META_CAPS].get("elicitation")
+        return isinstance(el, dict) and (not el or "form" in el)  # {} means form mode
+
+    # --- signed requestState (2026-07-28 protocol) -----------------------------------------
+    @staticmethod
+    def call_digest(name: str, args) -> str:
+        return hashlib.sha256(json.dumps([name, args], sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+    def seal(self, payload: dict) -> str:
+        body = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+        sig = hmac.new(self.secret, body.encode(), hashlib.sha256).hexdigest()
+        return f"{_STATE_PREFIX}{body}.{sig}"
+
+    def unseal(self, state: str, name: str, args) -> tuple[dict | None, str]:
+        """(payload, "") if `state` is ours, intact, unexpired, unused and for this exact call;
+        otherwise (None, why). Redeeming it uses it up."""
+        try:
+            body, sig = state[len(_STATE_PREFIX):].rsplit(".", 1)
+            if not hmac.compare_digest(sig, hmac.new(self.secret, body.encode(), hashlib.sha256).hexdigest()):
+                return None, "the approval's signature doesn't match (or the proxy restarted)"
+            payload = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
+        except (ValueError, TypeError):
+            return None, "the approval is malformed"
+        if payload.get("digest") != self.call_digest(name, args):
+            return None, "the approval was for a different call"
+        if payload.get("exp", 0) < time.time():
+            return None, "the approval expired"
+        if payload.get("nonce") in self.used_states:
+            return None, "the approval was already used"
+        self.used_states.add(payload.get("nonce"))
+        return payload, ""
+
+    def new_state(self, kind: str, name: str, args, inner: str | None, inner_responses=None) -> str:
+        return self.seal({"kind": kind, "digest": self.call_digest(name, args), "exp": time.time() + _STATE_TTL,
+                          "nonce": os.urandom(12).hex(), "inner": inner, "inner_responses": inner_responses})
 
     def sync(self) -> None:
         """Take in what other proxies in this session have read."""
@@ -109,27 +186,80 @@ class Proxy:
         params = msg.get("params") or {}
         name, args = params.get("name", ""), params.get("arguments") or {}
         tool = self.tool(name)
+        mrtr = self.uses_mrtr(params)
+        approved = False
+        state = params.get("requestState")
+        if mrtr and isinstance(state, str) and state.startswith(_STATE_PREFIX):
+            # A retry carrying our state: your answer to our question, or a call you already
+            # approved that the server then asked its own question about. Restore the server's
+            # part of the request before deciding, so what's forwarded is what it expects.
+            payload, why = self.unseal(state, name, args)
+            params = dict(params)
+            responses = dict(params.get("inputResponses") or {})
+            answer = responses.pop(_ASK_KEY, None)
+            params.pop("requestState", None)
+            params.pop("inputResponses", None)
+            if payload is not None:
+                if payload.get("inner") is not None:
+                    params["requestState"] = payload["inner"]
+                responses = {**(payload.get("inner_responses") or {}), **responses}
+            if responses:
+                params["inputResponses"] = responses
+            msg = {**msg, "params": params}
+            if payload is None:
+                self.log(kind="approval_rejected", tool=name, reason=why)
+            elif payload.get("kind") == "approved":
+                approved = True
+            else:
+                res = answer if isinstance(answer, dict) else {}
+                allowed = res.get("action") == "accept" and (res.get("content") or {}).get("allow", True) is not False
+                self.log(kind="answer", tool=name, allowed=allowed, action=res.get("action"), error=None)
+                if not allowed:
+                    self.refuse(msg, self.not_allowed_text(name, res.get("action")))
+                    return
+                approved = True
         self.sync()
         d = rules.decide(tool, args, self.session, self.config)
         self.log(kind="decision", tool=name, args=args, verdict=d.verdict, rule=d.rule,
-                 tainted=self.session.tainted, sources=list(self.session.sources))
-        if d.verdict == rules.AUTO:
+                 tainted=self.session.tainted, sources=list(self.session.sources), **({"approved": True} if approved else {}))
+        if d.verdict == rules.AUTO or (d.verdict == rules.ASK and approved):
+            # Approval satisfies "ask" but never "deny": the rules were checked again just now.
+            if approved:
+                self.approved_calls.add(msg["id"])
             self.forward_call(msg, tool)
         elif d.verdict == rules.DENY:
             self.refuse(msg, f"Blocked by Agent Do/Don't ({d.rule}). Don't try to achieve this another way; tell the user.")
-        elif not self.client_can_ask:
+        elif not self.can_ask(params):
             self.refuse(msg, f"Agent Do/Don't needs the user's OK for this ({d.rule}), but this client can't ask "
                              "questions (no MCP elicitation support), so it was not done. Tell the user.")
+        elif mrtr:
+            self.log(kind="ask", tool=name)
+            self.to_client({"jsonrpc": "2.0", "id": msg["id"], "result": {
+                "resultType": "input_required",
+                "inputRequests": {_ASK_KEY: {"method": "elicitation/create", "params": self.question(name, args, d, mrtr=True)}},
+                "requestState": self.new_state("ask", name, args, params.get("requestState"),
+                                               params.get("inputResponses")),
+            }})
         else:
             ask_id = f"agentdodont-{next(self.ids)}"
             self.pending_asks[ask_id] = (msg, tool, d)
-            summary = json.dumps(args, ensure_ascii=False)
-            summary = summary if len(summary) <= 400 else summary[:399] + "…"
-            self.to_client({"jsonrpc": "2.0", "id": ask_id, "method": "elicitation/create", "params": {
-                "message": f"Agent Do/Don't: allow {self.name}/{name} {summary}?\nWhy I'm asking: {d.rule}.",
-                "requestedSchema": {"type": "object", "properties": {
-                    "allow": {"type": "boolean", "title": "Allow this call", "default": True}}},
-            }})
+            self.to_client({"jsonrpc": "2.0", "id": ask_id, "method": "elicitation/create",
+                            "params": self.question(name, args, d)})
+
+    @staticmethod
+    def not_allowed_text(what: str, action) -> str:
+        if action == "decline":
+            return f"The user declined: {what}. Do not retry it another way."
+        return (f"Not done: {what} needs the user's OK, and the question was dismissed or couldn't be shown. "
+                "Do not retry it another way; tell the user.")
+
+    def question(self, name: str, args, d, mrtr: bool = False) -> dict:
+        summary = json.dumps(args, ensure_ascii=False)
+        summary = summary if len(summary) <= 400 else summary[:399] + "…"
+        q = {"message": f"Agent Do/Don't: allow {self.name}/{name} {summary}?\nWhy I'm asking: {d.rule}.",
+             "requestedSchema": {"type": "object", "properties": {
+                 "allow": {"type": "boolean", "title": "Allow this call", "default": True}}}}
+        return {"mode": "form", **q} if mrtr else q  # "mode" arrived with 2025-11-25
 
     def on_answer(self, msg: dict) -> None:
         original, tool, d = self.pending_asks.pop(msg["id"])
@@ -137,7 +267,7 @@ class Proxy:
         allowed = res.get("action") == "accept" and (res.get("content") or {}).get("allow", True) is not False
         self.log(kind="answer", tool=tool.name, allowed=allowed, action=res.get("action"), error=msg.get("error"))
         if not allowed:
-            self.refuse(original, f"The user declined: {tool.name} ({d.rule}). Do not retry it another way.")
+            self.refuse(original, self.not_allowed_text(f"{tool.name} ({d.rule})", res.get("action")))
             return
         # Approval satisfies "ask" but never "deny": decide again with the state as it is now.
         self.sync()
@@ -150,6 +280,8 @@ class Proxy:
     def forward_call(self, msg: dict, tool: rules.Tool) -> None:
         rules.record(tool, self.session)
         self.pending_calls[msg["id"]] = tool
+        p = msg.get("params") or {}
+        self.call_args[msg["id"]] = (p.get("name", ""), p.get("arguments") or {})
         self.to_server(msg)
 
     def refuse(self, msg: dict, text: str) -> None:
@@ -168,6 +300,22 @@ class Proxy:
             self.log(kind="tools", tools={n: vars(t) for n, t in self.tools.items()})
         elif "method" not in msg and mid in self.pending_calls:
             tool = self.pending_calls.pop(mid)
+            approved = mid in self.approved_calls
+            self.approved_calls.discard(mid)
+            result = msg.get("result") if isinstance(msg.get("result"), dict) else {}
+            if result.get("resultType") == "input_required":
+                # The server needs input before it finishes: not a result yet, so no taint. If
+                # you approved this call, wrap the server's state in ours so its retry isn't
+                # asked about again.
+                self.log(kind="server_input_required", tool=tool.name)
+                if approved:
+                    name, args = self.call_args.pop(mid, (tool.name, {}))
+                    result = {**result, "requestState": self.new_state("approved", name, args, result.get("requestState"))}
+                    msg = {**msg, "result": result}
+                self.call_args.pop(mid, None)
+                self.to_client(msg)
+                return
+            self.call_args.pop(mid, None)
             ok = "result" in msg and not (msg.get("result") or {}).get("isError", False)
             was = self.session.tainted
             if self.session.note_result(tool, ok):
