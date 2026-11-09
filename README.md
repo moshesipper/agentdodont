@@ -143,6 +143,10 @@ stays on the computer, in a small program (the relay) that the phone reaches Cla
    agentdodont relay --set-key
    ```
 
+   `[phone]` adds what the phone side needs: the Claude SDK, encryption for Wi-Fi pairing, and
+   the QR code. The MCP proxy alone needs only `pip install agentdodont`. Keep the quotes: some
+   shells (zsh, the macOS default) treat the brackets as special characters otherwise.
+
 2. **Install the app:** download `agentdodont-<version>.apk` from the
    [latest release](https://github.com/moshesipper/agentdodont/releases/latest). Open it on the
    phone and allow the install when Android asks, or run `adb install agentdodont-<version>.apk`
