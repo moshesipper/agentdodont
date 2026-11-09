@@ -125,12 +125,15 @@ adb shell "am broadcast -n dev.aos.launcher/.DebugAgentReceiver -a dev.aos.launc
 the laptop:
 
 ```powershell
-python -m agentdodont relay          # from C:\aos; leave running while using the phone
+python -m agentdodont relay          # leave running while using the phone
 ```
 
-The relay reads `anthropic.apiKey` from `android/local.properties` (or `ANTHROPIC_API_KEY`). On
-first run it generates a random `aos.relayToken` there. **Nothing secret is compiled into the APK**:
-whenever the phone connects, the relay writes the token into the app's private storage
+The relay reads `anthropic.apiKey` from `~/.agentdodont/relay.properties` (`relay --set-key`
+saves it there) or `ANTHROPIC_API_KEY`. In a checkout that has `android/local.properties`, it
+uses that file instead, and keeps its state in `.relay/` and `logs/` rather than
+`~/.agentdodont/relay/` and `~/.agentdodont/logs/`. On first run it generates a random
+`aos.relayToken` in the same file. **Nothing secret is compiled into the APK.** With the debug
+build, whenever the phone connects over USB, the relay writes the token into the app's private storage
 (`files/relay_token`, mode 600, readable only by the app) with `run-as`, passing it over stdin, and
 checks it by hash. `--new-token` rotates it with no rebuild. The phone reaches the
 relay over the USB cable (`adb reverse tcp:8787`, re-applied every 15 s); nothing listens on the
@@ -283,7 +286,10 @@ open such a link) and shows the certificate fingerprint to compare with the lapt
 - before sending the one-time code (8 digits, 5 minutes, 5 attempts), the phone makes the relay
   prove it knows it: HMAC(code, nonce + fingerprint). With a typed code (no fingerprint), that
   proof is what stops a look-alike relay on the Wi-Fi;
-- the relay issues a device token and stores only its hash (`.relay/devices.json`).
+- the relay issues a device token and stores only its hash (`devices.json` in its state folder).
+
+This is how the release app from GitHub connects: it isn't debuggable, so the relay can't hand
+it a token over USB.
 
 `relay --lan` serves already-paired phones; `relay --devices` lists them, `relay --revoke d1`
 cuts one off immediately (also while the relay runs). On the phone, `unpair` goes back to USB.

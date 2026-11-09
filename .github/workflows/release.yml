@@ -1,7 +1,12 @@
-# Runs the tests on every push to main and every pull request. A version tag (v0.1.2, ...) also
-# builds and publishes to PyPI with Trusted Publishing, so there's no API token anywhere: PyPI
-# accepts the upload only from this workflow (keep the file name), in this repository, running
-# in the "pypi" environment.
+# Runs the Python and Kotlin tests on every push to main and every pull request.
+#
+# A version tag (v0.2.0, ...) also releases, after you approve the "pypi" environment:
+#   1. builds the Python package and the signed Android app (the signing key is an environment
+#      secret, so only an approved run gets it);
+#   2. uploads the package to PyPI with Trusted Publishing: there's no API token anywhere, and
+#      PyPI accepts the upload only from this workflow (keep the file name), in this repository,
+#      in the "pypi" environment;
+#   3. creates the GitHub release, with the app and the package attached.
 name: Release
 
 on:
@@ -27,8 +32,19 @@ jobs:
       - run: python -m pip install ".[phone]"
       - run: python -m unittest discover -s tests -v
 
+  android-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - run: ./gradlew --no-daemon testDebugUnitTest
+        working-directory: android
+
   build:
-    needs: test
+    needs: [test, android-test]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
@@ -58,10 +74,57 @@ jobs:
       name: pypi
       url: https://pypi.org/project/agentdodont/
     permissions:
+      contents: read
       id-token: write  # lets PyPI verify this workflow; nothing else gets it
     steps:
+      # The app first: if it doesn't build, nothing is published.
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Build the signed app
+        working-directory: android
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          AGENTDODONT_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          export AGENTDODONT_KEYSTORE="$RUNNER_TEMP/release.jks"
+          echo "$KEYSTORE_B64" | base64 -d > "$AGENTDODONT_KEYSTORE"
+          ./gradlew --no-daemon assembleRelease
+          rm -f "$AGENTDODONT_KEYSTORE"
+          mkdir -p ../apk
+          cp app/build/outputs/apk/release/app-release.apk "../apk/agentdodont-${GITHUB_REF_NAME#v}.apk"
+      - name: The app is signed with the release key, and isn't debuggable
+        run: |
+          bt=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          apk=$(ls apk/*.apk)
+          certs=$("$bt/apksigner" verify --print-certs "$apk")
+          manifest=$("$bt/aapt2" dump xmltree --file AndroidManifest.xml "$apk")
+          grep -q "SHA-256 digest: 89929e39471bf62fdb19d84dbb2112cbd533ad8af4bf194ad2702cbaf12d2af4" <<< "$certs"
+          if grep -qiE "debuggable|DebugAgentReceiver" <<< "$manifest"; then echo "debug build"; exit 1; fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: apk
+          path: apk/
       - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    needs: publish
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # creates the release; this job never sees the signing key
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: files/
+          merge-multiple: true
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" files/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes

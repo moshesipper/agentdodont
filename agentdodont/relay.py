@@ -22,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import subprocess
 import threading
@@ -248,15 +249,25 @@ def read_properties(path: Path) -> dict[str, str]:
     return props
 
 
+def set_property(path: Path, key: str, value: str) -> None:
+    """Set one key in a .properties file, keeping the other lines. The file holds secrets, so on
+    first write it's readable by you only (on Windows, your user folder already is)."""
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    lines = [ln for ln in lines if ln.split("=", 1)[0].strip() != key]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    new = not path.exists()
+    path.write_text("\n".join(lines + [f"{key}={value}"]) + "\n", encoding="utf-8")
+    if new and os.name != "nt":
+        os.chmod(path, 0o600)
+
+
 def ensure_token(path: Path, rotate: bool = False) -> tuple[str, bool]:
     """Return (token, created). Creates aos.relayToken on first use, or replaces it when rotating."""
     existing = read_properties(path).get("aos.relayToken")
     if existing and not rotate:
         return existing, False
     token = secrets.token_urlsafe(32)
-    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
-    lines = [ln for ln in lines if not ln.strip().startswith("aos.relayToken")]
-    path.write_text("\n".join(lines + [f"aos.relayToken={token}"]) + "\n", encoding="utf-8")
+    set_property(path, "aos.relayToken", token)
     return token, True
 
 
@@ -303,7 +314,8 @@ def keep_phone_linked(adb: str, serial: str | None, port: int, token: str, stop:
             if ok:
                 good = provision_token(adb, serial, token)
                 print("  token:  " + ("in the app's private storage" if good else
-                                      "NOT provisioned (is the Agent Do/Don't debug build installed?)"))
+                                      "not handed over USB (that needs a debug build; the release app "
+                                      "pairs over Wi-Fi instead: relay --pair)"))
                 ok = ok if good else None  # retry provisioning next round
             last_ok = ok
         stop.wait(15)

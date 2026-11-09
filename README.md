@@ -132,23 +132,27 @@ the details and the setup for Claude Desktop.
 
 ### Phone app
 
-You need: an Android phone with USB debugging on (Android 11 or newer; tested on Android 16),
-Android Studio (for its JDK and SDK), Python 3.10+, `adb` on your PATH, and an
-[Anthropic API key](https://console.anthropic.com/).
+You need: an Android phone (Android 11 or newer; tested on Android 16), a computer on the same
+Wi-Fi with Python 3.10+, and an [Anthropic API key](https://console.anthropic.com/). The key
+stays on the computer, in a small program (the relay) that the phone reaches Claude through.
 
-```sh
-git clone https://github.com/moshesipper/agentdodont && cd agentdodont
-pip install -r requirements.txt
+1. **Install the relay** and give it your key (it's saved in `~/.agentdodont/`, never in the app):
 
-# 1. Your key goes in a gitignored file and stays on your computer.
-echo "anthropic.apiKey=YOUR_KEY" >> android/local.properties
+   ```sh
+   pip install "agentdodont[phone]"
+   agentdodont relay --set-key
+   ```
 
-# 2. Build and install (set JAVA_HOME to Android Studio's JDK). The key is never built into the app.
-cd android && ./gradlew installDebug && cd ..
+2. **Install the app:** download `agentdodont-<version>.apk` from the
+   [latest release](https://github.com/moshesipper/agentdodont/releases/latest). Open it on the
+   phone and allow the install when Android asks, or run `adb install agentdodont-<version>.apk`
+   from the computer. Every release is signed with the same key, certificate SHA-256
+   `89:92:9E:39:47:1B:F6:2F:DB:19:D8:4D:BB:21:12:CB:D5:33:AD:8A:F4:BF:19:4A:D2:70:2C:BA:F1:2D:2A:F4`.
 
-# 3. Start the relay: it gives the phone a device token over USB and holds the key.
-python -m agentdodont relay            # leave running while you use the phone
-```
+3. **Pair the phone:** run `agentdodont relay --pair`, scan the QR code with the phone's camera,
+   and confirm on the phone. If your firewall asks, allow the relay on private networks.
+
+4. **From then on**, start `agentdodont relay --lan` and leave it running while you use the phone.
 
 Then, on the phone:
 
@@ -160,9 +164,22 @@ Then, on the phone:
 - Type a request, such as *"what's on my calendar tomorrow?"* or *"alarm 7:30"*. Look at
   **History** and **Policy** to see what happened and to change what may happen.
 
-**Over Wi-Fi instead of USB:** `python -m agentdodont relay --lan --pair` shows a QR code. Scan
-it with the phone's camera, then confirm on the phone. After that, `relay --lan` is enough;
 `relay --devices` lists paired phones and `relay --revoke <id>` cuts one off.
+
+**Building from source** (for development, the red-team tests, or using the phone over USB
+without Wi-Fi): you also need Android Studio (set `JAVA_HOME` to its JDK) and `adb`.
+
+```sh
+git clone https://github.com/moshesipper/agentdodont && cd agentdodont
+pip install -r requirements.txt
+echo "anthropic.apiKey=YOUR_KEY" >> android/local.properties   # gitignored; never built into the app
+cd android && ./gradlew installDebug && cd ..
+python -m agentdodont relay     # over USB: hands the debug app a device token, then holds the key
+```
+
+In a checkout with `android/local.properties`, the relay keeps its files there and in `.relay/`
+and `logs/`. The debug build can't be installed over the release app (they're signed with
+different keys): uninstall one first.
 
 [docs/features.md](docs/features.md) has every option and command, plus the red-team commands.
 

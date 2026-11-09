@@ -6,8 +6,12 @@ anything it reads. The model proposes; the rules decide: **do it**, **ask you**,
 This package contains the **MCP proxy**. It works with any agent that uses
 [MCP](https://modelcontextprotocol.io) tools, such as Claude Code, Claude Desktop, or your own.
 It sits between the agent and an MCP server, and neither of them needs any changes. It needs
-nothing beyond the Python standard library. The project also includes an Android app with the
-same rules ([GitHub](https://github.com/moshesipper/agentdodont)).
+nothing beyond the Python standard library.
+
+The project also includes an Android app with the same rules. `pip install "agentdodont[phone]"`
+installs the relay that holds your API key for it, and the app itself is attached to each
+[GitHub release](https://github.com/moshesipper/agentdodont/releases/latest). Setup is in the
+[README](https://github.com/moshesipper/agentdodont#phone-app).
 
 Status: **experimental.**
 

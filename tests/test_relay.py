@@ -194,3 +194,44 @@ class RelayTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RelayPathsTest(unittest.TestCase):
+    """Installed with pip, the relay keeps its files in ~/.agentdodont; an existing checkout
+    setup (android/local.properties) keeps its old places."""
+
+    def paths(self, cwd, home, **given):
+        from types import SimpleNamespace
+        from agentdodont.__main__ import resolve_relay_paths
+        args = SimpleNamespace(**{"properties": None, "state_dir": None, "log_dir": None, **given})
+        resolve_relay_paths(args, cwd=cwd, home=home)
+        return Path(args.properties), Path(args.state_dir), Path(args.log_dir)
+
+    def test_installed_uses_home(self):
+        with tempfile.TemporaryDirectory() as d:
+            cwd, home = Path(d) / "anywhere", Path(d) / "home"
+            cwd.mkdir()
+            h = home / ".agentdodont"
+            self.assertEqual((h / "relay.properties", h / "relay", h / "logs"), self.paths(cwd, home))
+
+    def test_checkout_keeps_its_files(self):
+        with tempfile.TemporaryDirectory() as d:
+            cwd, home = Path(d) / "repo", Path(d) / "home"
+            (cwd / "android").mkdir(parents=True)
+            (cwd / "android" / "local.properties").write_text("anthropic.apiKey=sk-x\n")
+            self.assertEqual((cwd / "android" / "local.properties", cwd / ".relay", cwd / "logs"),
+                             self.paths(cwd, home))
+
+    def test_given_paths_win(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = self.paths(Path(d), Path(d), properties="k.properties")
+            self.assertEqual(Path("k.properties"), p[0])
+
+    def test_set_property_keeps_other_lines_and_creates_folders(self):
+        from agentdodont.relay import set_property
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "new" / "relay.properties"
+            set_property(p, "aos.relayToken", "t1")
+            set_property(p, "anthropic.apiKey", "sk-1")
+            set_property(p, "anthropic.apiKey", "sk-2")
+            self.assertEqual({"aos.relayToken": "t1", "anthropic.apiKey": "sk-2"}, read_properties(p))

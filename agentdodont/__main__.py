@@ -10,6 +10,7 @@ import argparse
 import os
 import sys
 import time
+from pathlib import Path
 
 from . import ui
 from .adb import AdbError, Device
@@ -154,6 +155,23 @@ def cmd_log(args) -> int:
     return 0
 
 
+def resolve_relay_paths(args, cwd: Path | None = None, home: Path | None = None) -> None:
+    """Fill in the relay's file locations that weren't given on the command line.
+
+    Installed with pip, everything lives in ~/.agentdodont/. Run from a checkout that already
+    has android/local.properties (the setup before 0.2.0), the old places are kept, so an
+    existing key, certificate and paired phones keep working."""
+    cwd = cwd or Path.cwd()
+    home = (home or Path.home()) / ".agentdodont"
+    checkout = (cwd / "android" / "local.properties").exists()
+    if args.properties is None:
+        args.properties = str(cwd / "android" / "local.properties" if checkout else home / "relay.properties")
+    if args.state_dir is None:
+        args.state_dir = str(cwd / ".relay" if checkout else home / "relay")
+    if args.log_dir is None:
+        args.log_dir = str(cwd / "logs" if checkout else home / "logs")
+
+
 def cmd_relay(args) -> int:
     import threading
     from pathlib import Path
@@ -161,7 +179,19 @@ def cmd_relay(args) -> int:
     from .pairing import DeviceRegistry, PairingSession, ensure_cert, lan_ip, pair_link, qr_ascii
     from .relay import Relay, ensure_token, keep_phone_linked, make_server, make_tls_server, read_properties
 
+    from .relay import set_property
+
+    resolve_relay_paths(args)
     state = Path(args.state_dir)
+    if args.set_key:
+        import getpass
+        key = getpass.getpass("Anthropic API key (not shown as you type): ").strip()
+        if not key:
+            print("no key entered; nothing changed")
+            return 1
+        set_property(Path(args.properties), "anthropic.apiKey", key)
+        print(f"saved in {args.properties}")
+        return 0
     devices = DeviceRegistry(state / "devices.json")
     if args.devices:
         for d in devices.devices or [{"id": "-", "name": "no paired devices", "paired": "", "last_seen": ""}]:
@@ -175,8 +205,10 @@ def cmd_relay(args) -> int:
     props_path = Path(args.properties)
     api_key = os.environ.get("ANTHROPIC_API_KEY") or read_properties(props_path).get("anthropic.apiKey")
     if not api_key:
-        print(f"no API key: set ANTHROPIC_API_KEY or put anthropic.apiKey=... in {props_path}")
+        print(f"no API key: run `agentdodont relay --set-key`, set ANTHROPIC_API_KEY, "
+              f"or put anthropic.apiKey=... in {props_path}")
         return 1
+    print(f"relay files: {props_path}  {state}  {args.log_dir}")
     token, created = ensure_token(props_path, rotate=args.new_token)
     relay = Relay(api_key, token, daily_budget_usd=args.budget, state_dir=Path(args.log_dir), devices=devices)
     server = make_server(relay, port=args.port)
@@ -195,8 +227,10 @@ def cmd_relay(args) -> int:
             print(f"code {relay.pairing.code} (works once, for 5 minutes)   fingerprint {fp[:8]}-{fp[8:16]}\n")
     print(f"relay on 127.0.0.1:{args.port}   budget ${args.budget:.2f}/day (spent today ${relay.spent_today():.2f})")
     print(f"log: {relay.log_path}  (metadata only)")
-    if created:
+    if created and args.new_token:
         print(f"  new relay token generated (saved in {props_path}); the old one no longer works")
+    elif created:
+        print(f"  relay token created (saved in {props_path})")
     stop = threading.Event()
     threading.Thread(target=keep_phone_linked, args=(Device(args.serial).adb, args.serial, args.port, token, stop),
                      daemon=True).start()
@@ -253,8 +287,10 @@ def main(argv: list[str] | None = None) -> int:
     rl = sub.add_parser("relay", help="hold the API key for the phone app (tunnelled over USB)")
     rl.add_argument("--port", type=int, default=8787)
     rl.add_argument("--budget", type=float, default=2.0, help="daily spend cap in USD (default 2)")
-    rl.add_argument("--properties", default="android/local.properties", help="where the key and token live")
-    rl.add_argument("--log-dir", default="logs")
+    rl.add_argument("--properties", help="where the key and token live (default: ~/.agentdodont/relay.properties, "
+                                         "or android/local.properties in a checkout that has one)")
+    rl.add_argument("--log-dir", help="spend and request log (default: ~/.agentdodont/logs, or logs/ in a checkout)")
+    rl.add_argument("--set-key", action="store_true", help="save your Anthropic API key for the relay and exit")
     rl.add_argument("--new-token", action="store_true", help="replace the phone token (no rebuild needed)")
     rl.add_argument("--lan", action="store_true", help="also serve paired phones over Wi-Fi (TLS)")
     rl.add_argument("--lan-port", type=int, default=8788)
@@ -262,7 +298,7 @@ def main(argv: list[str] | None = None) -> int:
     rl.add_argument("--pair-host", help="address to put in the QR code (default: this laptop's LAN IP)")
     rl.add_argument("--devices", action="store_true", help="list paired phones and exit")
     rl.add_argument("--revoke", metavar="ID", help="unpair a phone (see --devices) and exit")
-    rl.add_argument("--state-dir", default=".relay", help="where the certificate and paired devices live")
+    rl.add_argument("--state-dir", help="certificate and paired phones (default: ~/.agentdodont/relay, or .relay/ in a checkout)")
     rl.set_defaults(fn=cmd_relay)
 
     s = sub.add_parser("screen",help="print the current screen as the model sees it")

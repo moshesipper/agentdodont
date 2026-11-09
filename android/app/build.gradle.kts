@@ -14,8 +14,11 @@ android {
         applicationId = "dev.aos.launcher"
         minSdk = 30 // covers the S22 (Android 16) and the A12 (Android 13)
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1-stage1"
+        // One version for the whole project: the Python package's (agentdodont/__init__.py).
+        val version = Regex("__version__ = \"(\\d+)\\.(\\d+)\\.(\\d+)\"")
+            .find(rootProject.file("../agentdodont/__init__.py").readText())!!.groupValues
+        versionName = "${version[1]}.${version[2]}.${version[3]}"
+        versionCode = version[1].toInt() * 10000 + version[2].toInt() * 100 + version[3].toInt()
 
         // The app reaches Claude only through the laptop relay (`python -m agentdodont relay`), which
         // holds the API key. Nothing secret is compiled in: the build never reads anthropic.apiKey, and
@@ -31,9 +34,24 @@ android {
         resValue("string", "relay_url", relayUrl.replace("\"", ""))
     }
 
+    // Release builds are signed only when the key is supplied from outside the repository (the
+    // release workflow gets it from GitHub secrets). Every published APK must use the same key,
+    // or phones refuse the update.
+    val keystore = System.getenv("AGENTDODONT_KEYSTORE")
+    signingConfigs {
+        if (keystore != null) {
+            create("release") {
+                storeFile = file(keystore)
+                storePassword = System.getenv("AGENTDODONT_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("AGENTDODONT_KEY_ALIAS") ?: "agentdodont"
+                keyPassword = System.getenv("AGENTDODONT_KEYSTORE_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (keystore != null) signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
