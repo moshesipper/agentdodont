@@ -120,6 +120,7 @@ def norm_path(s: str) -> str:
     if os.name == "nt" and re.match(r"^/[A-Za-z](/|$)", s):  # Git Bash and MSYS: /c/Users -> c:/Users
         s = s[1] + ":/" + s[3:]
     s = posixpath.normpath(s) if s else s
+    s = re.sub(r"^/{2,}", "/", s)  # normpath keeps a leading "//" (file:////x, //x/../y)
     return s.casefold()
 
 
