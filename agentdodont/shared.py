@@ -15,6 +15,11 @@ The file only ever grows: one line per untrusted source. Taint never goes away d
 session, so there is nothing to merge or lock; a proxy reads the file before every decision and
 appends when one of its tools brings in untrusted content. Each proxy also keeps what it knows
 in memory, so deleting the file can't make a proxy forget its own taint.
+
+Since the file only grows, any other change means someone removed taint: a hijacked agent with
+a shell can delete or rewrite it. Every proxy writes a line when it joins and remembers what it
+has read; if the file later goes missing or no longer starts with that, the proxy counts the
+session as tainted by tampering, which is what an attacker would least want.
 """
 from __future__ import annotations
 
@@ -171,12 +176,17 @@ def _safe(s: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]", "_", s)[:80] or "session"
 
 
+TAMPERED = "a change to this session's shared taint file, which may only grow"
+
+
 class SharedTaint:
     """The session file. path None = not shared (this proxy keeps its own taint only)."""
 
     def __init__(self, path: Path | None, label: str = ""):
         self.path = path
         self.label = label  # who the session belongs to, for the audit log
+        self.seen = b""  # the file as this proxy last read it; it may only grow from here
+        self.tampered = False
         if path:
             path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -210,15 +220,27 @@ class SharedTaint:
                 except OSError:
                     pass
 
+    def join(self, server: str) -> None:
+        """Mark this proxy's arrival, so the file is never empty once anyone has read it."""
+        if not self.path:
+            return
+        append_line(self.path, json.dumps({"t": round(time.time(), 3), "server": server, "joined": True}))
+        self.sources()
+
     def sources(self) -> list[str]:
         if not self.path:
             return []
         try:
-            lines = self.path.read_text(encoding="utf-8").splitlines()
+            data = self.path.read_bytes()
+        except FileNotFoundError:
+            data = b""
         except OSError:
-            return []
-        out = []
-        for line in lines:
+            data = self.seen  # can't read it right now (say, a lock on Windows): nothing new
+        if not data.startswith(self.seen):
+            self.tampered = True  # deleted, truncated or rewritten: taint was removed
+        self.seen = data
+        out = [TAMPERED] if self.tampered else []
+        for line in data.decode("utf-8", errors="replace").splitlines():
             try:
                 src = json.loads(line).get("source")
             except (ValueError, AttributeError):

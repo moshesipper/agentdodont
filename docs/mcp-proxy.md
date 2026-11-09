@@ -70,7 +70,9 @@ directory the client starts it in.
   Claude Desktop, …) and keep a small file per client in `~/.agentdodont/sessions/`, removed
   after the client exits. `--session NAME` shares taint between every proxy given that
   name instead, and `--session none` turns sharing off. Deleting the file doesn't untaint a
-  proxy: each one also remembers what it has seen.
+  proxy: each one also remembers what it has seen. The file only ever grows, so if it goes
+  missing or is rewritten during the session, every proxy counts the session as tainted
+  ("a change to this session's shared taint file").
 - **Where data goes.** The proxy finds addresses in each call's arguments: URLs, email
   addresses, and any host or phone number in arguments named like `url`, `host`, `to` or
   `phone`. You can name more with `destination_args`.
@@ -95,6 +97,9 @@ directory the client starts it in.
     the server then asks a question of its own, you aren't asked about the call again.
 
   A question that's dismissed or can't be shown (as in `claude -p`) counts as a no.
+- **Its own files.** The agent can't read or change Agent Do/Don't's files or the client's
+  settings through any proxied tool, whatever your settings say (see
+  [Protecting the proxy itself](#protecting-the-proxy-itself)).
 - **Refusing.** A refused call never reaches the server. The agent gets an error result saying
   why, and an instruction not to try another way.
 - **Log.** Every decision, answer and result goes to `~/.agentdodont/mcp-audit.jsonl` (or the
@@ -137,6 +142,56 @@ See [mcp-rules.example.json](../mcp-rules.example.json). Every field is optional
 | `tools` | Per tool: `risk` (`none` / `reversible` / `irreversible`), `untrusted_output` (`true` / `false` / a description), `sends_data_out`, `destination_args` (`{"arg": "site"}`, `{"arg": "recipient"}`, or `{"arg": "none"}` for an argument that isn't a destination, such as the account a call acts as) |
 | `tainted_egress` | `deny` (default) or `ask`: what a tainted session gets for a new destination |
 | `max_calls_per_minute` | Per tool (default 30) |
+| `protected_paths` | More files or folders the agent may never read or change, on top of the built-in ones |
+
+## Protecting the proxy itself
+
+A hijacked agent might try to switch off what's checking it: loosen the rules file, delete the
+taint file, or take the proxy out of the client's MCP configuration. The proxy can stop this for
+tools that go through it. Only the client can stop it for its own tools.
+
+**Through the proxy: refused, always.** A call whose arguments name one of these is refused for
+reading as well as writing, whatever your `levels` say:
+
+- any folder named `.agentdodont` (the audit log and session files) or `.claude` (Claude
+  Code's settings, user-wide and per project);
+- any file named `.mcp.json`, `.claude.json` or `claude_desktop_config.json` (where clients
+  list their MCP servers, and so whether the proxy runs at all);
+- this proxy's rules file, audit log and session folder wherever they are, and its own code;
+- anything in `protected_paths`.
+
+A tool that changes things can't name a folder that contains one of these either (moving or
+deleting it would take them along). Paths are compared after resolving `~`, `..`, slashes and
+case, and a relative path counts if it could be one of these ("mcp-rules.json" when a
+filesystem server's folder holds it). A sentence that mentions a path isn't refused; an
+argument named like `path` or `source`, or a string that looks like a path, is checked.
+
+**The client's own tools: your settings.** Claude Code's Bash, Read and Edit don't go through
+the proxy. Keep your rules file in `~/.agentdodont/` (so one rule covers everything) and add to
+`~/.claude/settings.json`:
+
+```json
+{
+  "permissions": {
+    "deny": ["Edit(~/.agentdodont/**)"],
+    "ask": ["Read(~/.agentdodont/**)", "Edit(**/.mcp.json)", "Edit(~/.claude.json)"]
+  }
+}
+```
+
+The `deny` rule stops Claude Code from changing the rules or the session files. The `ask` rules
+make it ask before it reads your audit log or changes which MCP servers run. Claude Code already
+asks before writing to `.claude` folders, except in `bypassPermissions` mode. These rules also cover file commands Claude Code
+recognizes in Bash (`cat`, `sed`, `rm`, redirects), but not a script that opens files itself.
+For that, on macOS, Linux or WSL2, also turn on Claude Code's sandbox:
+
+```json
+{ "sandbox": { "enabled": true, "filesystem": { "denyWrite": ["~/.agentdodont"] } } }
+```
+
+The sandbox doesn't run on native Windows, so there a determined agent with a shell can still
+get past this. The proxy's other guard still holds: a rule change takes effect only when the
+client restarts the proxy, and a deleted taint file counts as tainted.
 
 ## Limits
 
@@ -154,5 +209,11 @@ See [mcp-rules.example.json](../mcp-rules.example.json). Every field is optional
   tools with `levels` or `destination_args`.
 - **Annotations come from the server.** The proxy reads them cautiously, but a server you don't
   trust can label a dangerous tool as read-only. Set `tools` for servers you don't control.
+- **Protected files are found by name and path.** A link, a hard link or a server that takes
+  a path in a form the proxy doesn't recognise (an ID, an encoded path) gets past the check.
+  The same rule can refuse a harmless call, such as reading a `.claude` folder in a GitHub
+  repository.
+- **The client's own tools aren't covered** (see
+  [Protecting the proxy itself](#protecting-the-proxy-itself)).
 - **Questions depend on the client.** How an elicitation looks (and whether it shows the whole
   argument list) is up to the client.

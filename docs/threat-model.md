@@ -34,6 +34,8 @@ fully hijacked model would (see [Evidence](#evidence)).
 | **A model malicious from the start** | Misbehave without having read any untrusted content | **Partly**: sending data anywhere new asks (see [Limits](#limits)) |
 | **Someone holding your unlocked phone, root or malware with system privileges, a malicious accessibility service you installed** | Bypass any app-level control | No |
 | **Whoever controls the computer running the relay** | Read the API key and use the budget | No: the relay host is trusted |
+| **A hijacked agent turning on Agent Do/Don't** | Edit its rules, delete its taint or its log, remove it from the client's configuration | **Yes**, through its tools (see [Protecting Agent Do/Don't itself](#protecting-agent-dodont-itself)); for the client's own shell, only with the client's settings |
+| **Someone publishing a fake release** | Ship malicious code as an update | Partly: signed, approved releases with provenance (see the same section) |
 
 ## Guarantees and how they're enforced
 
@@ -95,6 +97,44 @@ it, which rule decided, what you answered and what happened.
 
 **Also:** each tool is rate-limited to 30 calls a minute, so a runaway loop stops.
 
+## Protecting Agent Do/Don't itself
+
+The rules engine has no model in it, so it can't be talked out of a decision: it never treats
+what it reads as instructions. An attacker who can't persuade it has three other ways in.
+
+**1. The agent changes the rules or wipes the record.**
+- **On the phone**, the agent can't read or operate Agent Do/Don't's own screens (G4). The
+  rules, the History and memory are in the app's private storage, and undo and clearing are
+  your buttons, not its tools (G6).
+- **In the MCP proxy**, no proxied tool can read or change the proxy's rules file, audit log,
+  session files or code, or the client's settings and MCP configuration (`.claude`, `.mcp.json`,
+  `claude_desktop_config.json`). This holds whatever the settings say. A tool that changes
+  things can't name a folder that holds them either.
+- **Taint can't be wiped.** The shared taint file only ever grows. If it shrinks, changes or
+  disappears during a session, every proxy counts the session as tainted, and each proxy also
+  keeps its own taint in memory.
+- **What the proxy can't cover:** the client's own tools (Claude Code's Bash, Read, Edit) don't
+  pass through it. Claude Code's permission rules and sandbox can protect the same files;
+  [docs/mcp-proxy.md](mcp-proxy.md#protecting-the-proxy-itself) has the settings. On native
+  Windows there's no sandbox, so an agent that can run arbitrary scripts can still edit them.
+  A changed rules file only takes effect when the client restarts the proxy.
+
+**2. Bugs.** A malicious server, page or app can send input meant to crash or confuse the
+code. Unknown input fails safe: an unannotated tool asks, an unparseable message is
+dropped, a destination that can't be determined is refused. The code is small and unit-tested,
+but it hasn't been fuzzed or independently audited.
+
+**3. The release itself.** Someone who takes over the GitHub account could publish a malicious
+release, and everyone installing would get it. What stands in the way:
+- PyPI releases come from GitHub Actions through Trusted Publishing (no stored upload tokens),
+  and each one waits for the maintainer's approval.
+- PyPI shows provenance tying every file to the run that built it.
+- The APK is signed with a key kept outside the repository, and every release must match the
+  certificate published in the README; Android refuses an update signed with another key.
+- The MCP proxy uses only Python's standard library: no third-party code at all.
+
+The maintainer's GitHub account and the signing key are the points to protect.
+
 ## Limits
 
 These are known limits, not bugs. Reports that improve on them are welcome.
@@ -139,7 +179,8 @@ These are known limits, not bugs. Reports that improve on them are welcome.
 ## Evidence
 
 - **Unit tests** cover the rules engine, taint, outbound allow-lists, undo, History, the screen
-  rules and word lists, memory and pairing (79 Kotlin tests); and the relay and pairing (Python).
+  rules and word lists, memory and pairing (79 Kotlin tests); and the relay, pairing and the MCP proxy, including
+  its own-files rule and taint-file tampering (Python).
 - **On a real phone** (Galaxy S22, Android 16), with the scripted attacker in the debug build:
 
   | Injection arrives via | Attacker then tries to | Got through without the user's OK |

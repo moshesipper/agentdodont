@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import os
+import posixpath
 import re
 import time
 from collections import deque
@@ -91,6 +93,89 @@ def destinations(args: dict, extra: dict[str, str] | None = None) -> list[Destin
     return uniq
 
 
+# Files the agent must never read or change through a tool: Agent Do/Don't's own (rules, audit
+# log, session taint files, its code) and the client's settings that decide whether the proxy
+# runs at all. A folder with one of these names anywhere in a path, or a file with one of these
+# names, is protected wherever it is; the exact paths of this proxy's files come from the proxy.
+PROTECTED_DIRS = {".agentdodont", ".claude"}
+PROTECTED_FILES = {".mcp.json", ".claude.json", "claude_desktop_config.json"}
+# Argument names that hold a path: always checked. Other strings are checked only if they look
+# like a path (so a sentence that mentions ~/.agentdodont isn't refused).
+PATH_ARGS = {"path", "paths", "source", "destination", "file", "files", "filename", "file_path", "filepath",
+             "dir", "directory", "folder", "root", "target", "src", "dest", "from_path", "to_path"}
+_PATHLIKE = re.compile(r"^(?:~|/|\\|\.{1,2}[/\\]|[A-Za-z]:[/\\]|file://)")
+
+
+def norm_path(s: str) -> str:
+    """A path in one comparable form: ~ expanded, forward slashes, . and .. resolved, case-folded
+    (stricter than POSIX needs, never looser). C:\\x, C:/x, /c/x and file:///C:/x are the same."""
+    s = s.strip()
+    if s.lower().startswith("file://"):
+        s = s[7:]
+    if s.startswith("~"):
+        s = os.path.expanduser(s)
+    s = s.replace("\\", "/")
+    if re.match(r"^/[A-Za-z]:/", s):
+        s = s[1:]
+    if os.name == "nt" and re.match(r"^/[A-Za-z](/|$)", s):  # Git Bash and MSYS: /c/Users -> c:/Users
+        s = s[1] + ":/" + s[3:]
+    s = posixpath.normpath(s) if s else s
+    return s.casefold()
+
+
+def _is_abs(p: str) -> bool:
+    return p.startswith("/") or bool(re.match(r"^[a-z]:/", p))
+
+
+def protected_target(args: dict, protected: list[str], writes: bool) -> str | None:
+    """The first argument that names a protected file or folder (or, for a tool that changes
+    things, a folder that contains one, which a move or delete would take with it); else None.
+    [protected]: absolute paths, already normalized."""
+    def hit(raw: str) -> bool:
+        p = norm_path(raw)
+        if not p or p == ".":
+            return False
+        segs = p.split("/")
+        if any(s in PROTECTED_DIRS for s in segs) or segs[-1] in PROTECTED_FILES:
+            return True
+        for q in protected:
+            if _is_abs(p):
+                if p == q or p.startswith(q + "/") or (writes and q.startswith(p.rstrip("/") + "/")):
+                    return True
+            else:  # relative to a root we don't know: match it against the end of q
+                if q.endswith("/" + p):
+                    return True  # p is q ("mcp-rules.json" in the folder that holds it)
+                for i in range(2, len(segs)):
+                    if q.endswith("/" + "/".join(segs[:i])):
+                        return True  # p is inside q, named by at least two folders of q's path
+                if writes and ("/" + p + "/") in (q + "/"):
+                    return True  # p is a folder that contains q
+        return False
+
+    found: list[str] = []
+
+    def walk(key: str, v) -> None:
+        if found:
+            return
+        if isinstance(v, dict):
+            for k, x in v.items():
+                walk(str(k), x)
+        elif isinstance(v, list):
+            for x in v:
+                walk(key, x)
+        elif isinstance(v, str) and "\n" not in v and len(v) <= 4096:
+            s = v.strip()
+            if "://" in s and not s.lower().startswith("file://"):
+                return  # a web address, not a file (sending data there is the destination rules' job)
+            looks = key.lower() in PATH_ARGS or _PATHLIKE.match(s) or (s and not any(c.isspace() for c in s))
+            if looks and hit(s):
+                found.append(s)
+
+    for k, v in (args or {}).items():
+        walk(str(k), v)
+    return found[0] if found else None
+
+
 @dataclass
 class Tool:
     """What the rules know about a tool: from the user's config, else the server's annotations."""
@@ -133,6 +218,13 @@ class Config:
     tools: dict[str, dict] = field(default_factory=dict)  # per-tool overrides (risk, untrusted_output, ...)
     max_calls_per_minute: int = 30
     tainted_egress: str = DENY  # deny (default) | ask: what a tainted session gets for a new destination
+    protected_paths: list[str] = field(default_factory=list)  # normalized; added to, never replacing, the built-in ones
+
+    def protect(self, *paths) -> None:
+        for p in paths:
+            n = norm_path(str(p))
+            if n and n != "." and n not in self.protected_paths:
+                self.protected_paths.append(n)
 
     @staticmethod
     def load(path: str | None) -> "Config":
@@ -140,7 +232,7 @@ class Config:
             return Config()
         with open(path, encoding="utf-8") as f:
             d = json.load(f)
-        return Config(
+        c = Config(
             levels=dict(d.get("levels", {})),
             allowed_sites={s.lower() for s in d.get("allowed_sites", [])},
             blocked_sites={s.lower() for s in d.get("blocked_sites", [])},
@@ -149,6 +241,8 @@ class Config:
             max_calls_per_minute=int(d.get("max_calls_per_minute", 30)),
             tainted_egress=d.get("tainted_egress", DENY),
         )
+        c.protect(*d.get("protected_paths", []))
+        return c
 
     def site_allowed(self, host: str) -> bool:
         return any(host == d or host.endswith("." + d) for d in self.allowed_sites)
@@ -197,6 +291,13 @@ def decide(tool: Tool, args: dict, session: Session, config: Config, now: float 
     now = time.time() if now is None else now
     found: list[Decision] = []
     pretty = tool.name.replace("_", " ")
+
+    # 0. Agent Do/Don't's own files and the client's settings: never, whatever the settings say.
+    target = protected_target(args, config.protected_paths, writes=tool.risk != NONE)
+    if target:
+        shown = target if len(target) <= 120 else target[:119] + "…"
+        found.append(Decision(DENY, f"{shown} belongs to Agent Do/Don't or to your agent's own settings, "
+                                    "which the agent may not read or change"))
 
     # 1. Level: the user's setting, else the default for the risk.
     user = config.level_for(tool.name)

