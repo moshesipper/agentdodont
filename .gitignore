@@ -17,3 +17,6 @@ local.properties
 dist/
 build/
 *.egg-info/
+
+# Local backup script (copies the project to a thumb drive)
+backup.bat
