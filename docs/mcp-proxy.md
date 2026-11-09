@@ -11,8 +11,16 @@ server don't need any changes.
 ```
 
 Status: **experimental.** It's tested end to end against a scripted client and server
-([tests/test_mcp_proxy.py](../tests/test_mcp_proxy.py)), but not yet run against many real
-servers and clients.
+([tests/test_mcp_proxy.py](../tests/test_mcp_proxy.py)), on Linux and Windows, with both ways
+of asking (below). It has also run under Claude Code 2.1 on Windows, with the published package
+in front of the real filesystem and fetch servers:
+- questions appeared, and both answers worked;
+- a file with a planted injection tainted the session;
+- the fetch server's proxy then refused to send to an unknown site, without asking.
+
+It hasn't yet run with Claude Desktop, or under a real client with the GitHub and Gmail
+servers. Those presets are checked against the real servers by a script
+([tools/check_presets.py](../tools/check_presets.py)), not by an agent.
 
 ## Set up
 
