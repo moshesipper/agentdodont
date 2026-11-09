@@ -12,3 +12,8 @@ local.properties
 *.jks
 *.pem
 *.key
+
+# Python packaging
+dist/
+build/
+*.egg-info/

@@ -1,1 +1,3 @@
-"""Agent Do/Don't, Stage 0: an LLM agent that drives an Android phone over ADB, gated by a policy engine."""
+"""Agent Do/Don't: a rules engine between an AI agent and its tools, built assuming the model can be hijacked."""
+
+__version__ = "0.1.0"

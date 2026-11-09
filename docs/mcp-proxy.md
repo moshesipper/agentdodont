@@ -16,43 +16,40 @@ servers and clients.
 
 ## Set up
 
-Start the proxy in place of the server, with the server's command after `--`.
+Start the proxy in place of the server, with the server's own command after `--`. The proxy
+needs Python 3.10+ and nothing else. With [uv](https://docs.astral.sh/uv/), `uvx` fetches it on
+first use; without uv, run `pip install agentdodont` and replace `uvx agentdodont` below with
+`agentdodont`.
 
-Claude Code: add it to `.mcp.json` in your project (Claude Code asks you to approve it at the
-next start). `claude mcp add name -- python -m …` doesn't work, because the CLI reads `-m` as its
-own option.
+Claude Code, in one line:
 
-```json
-{
-  "mcpServers": {
-    "fetch": {
-      "type": "stdio",
-      "command": "python",
-      "args": ["-P", "-m", "agentdodont", "mcp-proxy", "--rules", "/path/to/mcp-rules.json", "--name", "fetch",
-               "--", "uvx", "mcp-server-fetch"],
-      "env": {"PYTHONPATH": "/path/to/agentdodont"}
-    }
-  }
-}
+```
+claude mcp add fetch -- uvx agentdodont mcp-proxy --rules /path/to/mcp-rules.json --name fetch -- uvx mcp-server-fetch
 ```
 
-Claude Desktop (`claude_desktop_config.json`):
+Or in `.mcp.json` in your project (Claude Code asks you to approve it at the next start):
 
 ```json
 {
   "mcpServers": {
     "fetch": {
-      "command": "python",
-      "args": ["-P", "-m", "agentdodont", "mcp-proxy", "--rules", "/path/to/mcp-rules.json", "--name", "fetch",
+      "command": "uvx",
+      "args": ["agentdodont", "mcp-proxy", "--rules", "/path/to/mcp-rules.json", "--name", "fetch",
                "--", "uvx", "mcp-server-fetch"]
     }
   }
 }
 ```
 
-`PYTHONPATH` points at your checkout of this repository, and `-P` (Python 3.11+) stops Python
-from loading a different `agentdodont` folder from the directory the client starts it in. The proxy needs Python 3.10+ and nothing
-else. On Windows, commands like `npx` are found as `npx.cmd` automatically.
+Claude Desktop uses the same entry in `claude_desktop_config.json`.
+
+Put a proxy in front of every server you use: they share one session (below). On Windows,
+commands like `npx` are found as `npx.cmd` automatically.
+
+From a checkout of this repository instead: `"command": "python"`, with
+`"args": ["-P", "-m", "agentdodont", "mcp-proxy", ...]` and `"env": {"PYTHONPATH": "/path/to/agentdodont"}`.
+`-P` (Python 3.11+) stops Python from loading a different `agentdodont` folder from the
+directory the client starts it in.
 
 ## What it does
 

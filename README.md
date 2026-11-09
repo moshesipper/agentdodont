@@ -170,12 +170,13 @@ python -m unittest discover -s tests          # relay, pairing, MCP proxy, lapto
 - message and email drafts with your contacts as the allow-list;
 - the relay with a budget, a rate limit and pinned Wi-Fi pairing;
 - **experimental:** an [MCP proxy](docs/mcp-proxy.md) that puts the same rules between any MCP agent
-  (Claude Code, Claude Desktop…) and its tools.
+  (Claude Code, Claude Desktop…) and its tools, with one session across all its servers:
+  `pip install agentdodont`, or `uvx agentdodont mcp-proxy`.
 
 **Next:**
 - [ ] a defense and tests against "action rebinding" (the screen changes between check and tap)
 - [ ] the rules engine as a standalone library, ported to Python, with shared test cases for both versions
-- [ ] the MCP proxy beyond experimental: one session across several servers, and runs against popular servers and clients
+- [ ] the MCP proxy beyond experimental: ready-made rules and runs against popular servers and clients
 
 ---
 

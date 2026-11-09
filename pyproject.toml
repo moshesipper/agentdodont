@@ -1,0 +1,57 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentdodont"
+dynamic = ["version"]
+description = "A rules engine between an AI agent and its tools, built assuming the model can be hijacked. Includes an MCP proxy."
+readme = "docs/pypi.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+requires-python = ">=3.10"
+authors = [{ name = "Moshe Sipper" }]
+keywords = ["mcp", "ai-agents", "prompt-injection", "security", "llm", "claude", "android"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+]
+# The MCP proxy needs nothing beyond the standard library.
+dependencies = []
+
+[project.optional-dependencies]
+# The phone agent and relay (python -m agentdodont run / relay).
+phone = [
+    "anthropic>=0.84",
+    "pillow>=10",
+    "cryptography>=42",
+    "qrcode>=7",
+]
+
+[project.scripts]
+agentdodont = "agentdodont.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/moshesipper/agentdodont"
+Documentation = "https://github.com/moshesipper/agentdodont/blob/main/docs/mcp-proxy.md"
+Issues = "https://github.com/moshesipper/agentdodont/issues"
+
+[tool.hatch.version]
+path = "agentdodont/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["agentdodont"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/agentdodont/",
+    "/tests/",
+    "/docs/pypi.md",
+    "/mcp-rules.example.json",
+    "/README.md",
+    "/LICENSE",
+    "/NOTICE",
+]

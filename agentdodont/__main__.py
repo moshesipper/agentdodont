@@ -218,7 +218,10 @@ def cmd_mcp_proxy(args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="agentdodont", description="Stage 0: laptop agent driving an Android phone over ADB")
+    from . import __version__
+    p = argparse.ArgumentParser(prog="agentdodont", description="Agent Do/Don't: a rules engine between an AI agent "
+                                "and its tools. mcp-proxy guards any MCP server; the other commands drive an Android phone.")
+    p.add_argument("--version", action="version", version=f"agentdodont {__version__}")
     p.add_argument("--serial", help="adb device serial (when several are connected)")
     sub = p.add_subparsers(dest="cmd", required=True)
 
