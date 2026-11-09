@@ -116,6 +116,22 @@ docs/           Threat model, benchmark, and every feature in detail with how it
 
 ## Quick start
 
+### MCP proxy (any MCP agent)
+
+Needs only Python 3.10+. Put the proxy in front of each MCP server, with the server's own
+command after `--`. With [uv](https://docs.astral.sh/uv/), in Claude Code:
+
+```sh
+claude mcp add fetch -- uvx agentdodont mcp-proxy --name fetch -- uvx mcp-server-fetch
+```
+
+Without uv: `pip install agentdodont`, then the same line with `agentdodont` in place of
+`uvx agentdodont`. Add `--rules mcp-rules.json` for your own lists and settings (see
+[mcp-rules.example.json](mcp-rules.example.json)). [docs/mcp-proxy.md](docs/mcp-proxy.md) has
+the details and the setup for Claude Desktop.
+
+### Phone app
+
 You need: an Android phone with USB debugging on (Android 11 or newer; tested on Android 16),
 Android Studio (for its JDK and SDK), Python 3.10+, `adb` on your PATH, and an
 [Anthropic API key](https://console.anthropic.com/).
