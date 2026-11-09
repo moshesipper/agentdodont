@@ -167,11 +167,17 @@ class Session:
     sources: list[str] = field(default_factory=list)
     recent: deque = field(default_factory=deque)  # (tool, time) of executed calls
 
-    def note_result(self, tool: Tool, ok: bool) -> None:
-        if ok and tool.untrusted_output:
-            self.tainted = True
-            if tool.untrusted_output not in self.sources:
-                self.sources.append(tool.untrusted_output)
+    def add_source(self, source: str) -> bool:
+        """Untrusted content entered the session; True if this source is new."""
+        self.tainted = True
+        if source in self.sources:
+            return False
+        self.sources.append(source)
+        return True
+
+    def note_result(self, tool: Tool, ok: bool) -> bool:
+        """A call finished; True if its output brought in a new untrusted source."""
+        return bool(ok and tool.untrusted_output) and self.add_source(tool.untrusted_output)
 
 
 def default_level(risk: str) -> str:

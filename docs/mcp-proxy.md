@@ -59,6 +59,13 @@ else. On Windows, commands like `npx` are found as `npx.cmd` automatically.
 - **Taint.** Unless your rules say otherwise, a tool's output counts as untrusted: the MCP spec
   treats tools as "open world" by default. After the first such result, the session is tainted,
   and every question names the source ("output of fetch/fetch").
+- **One session across servers.** A client starts one proxy per server, and all the proxies it
+  starts share their taint. So a web page read through a fetch server counts when the agent
+  then calls an email server. The proxies find the client process themselves (Claude Code,
+  Claude Desktop, …) and keep a small file per client in `~/.agentdodont/sessions/`, removed
+  after the client exits. `--session NAME` shares taint between every proxy given that
+  name instead, and `--session none` turns sharing off. Deleting the file doesn't untaint a
+  proxy: each one also remembers what it has seen.
 - **Where data goes.** The proxy finds addresses in each call's arguments: URLs, email
   addresses, and any host or phone number in arguments named like `url`, `host`, `to` or
   `phone`. You can name more with `destination_args`.
@@ -95,10 +102,13 @@ See [mcp-rules.example.json](../mcp-rules.example.json). Every field is optional
 
 ## Limits
 
-- **One server per proxy.** Taint is tracked per proxy, and each proxy wraps one server. Content
-  read through server A doesn't taint calls to server B. Until a multi-server mode exists,
-  put the server that reads untrusted content and the one that can send data behind the same
-  proxy if you can, or treat each server's reads as tainting everything (`levels` → `ask`).
+- **Sharing depends on finding the client.** If the proxy can't identify the client process
+  (the audit log's `session_start` line says "not shared"), it falls back to tracking taint for
+  its own server only. Give every proxy the same `--session` name to share anyway.
+- **Only MCP tools are covered.** An agent's built-in tools (Claude Code's Bash, WebFetch…) don't
+  go through the proxy, so content they read doesn't taint the session, and data they send isn't
+  checked. Use the client's own permission settings for those.
+- **The rate limit is per server**, not shared.
 - **A session stays tainted** until the client restarts the server. That's deliberate, but it
   means a long session asks more as it goes on.
 - **Addresses are found by pattern.** Data can also leave in ways that don't look like an

@@ -32,14 +32,16 @@ import time
 from pathlib import Path
 
 from . import rules
+from .shared import SharedTaint
 
 
 class Proxy:
     def __init__(self, server_cmd: list[str], config: rules.Config, log_path: Path, name: str,
-                 client_in=None, client_out=None):
+                 client_in=None, client_out=None, shared: SharedTaint | None = None):
         self.config = config
         self.name = name
         self.session = rules.Session()
+        self.shared = shared or SharedTaint(None, "not shared")
         self.tools: dict[str, rules.Tool] = {}
         self.client_in = client_in or sys.stdin
         self.client_out = client_out or sys.stdout
@@ -87,7 +89,7 @@ class Proxy:
         if method == "initialize":
             caps = (msg.get("params") or {}).get("capabilities") or {}
             self.client_can_ask = "elicitation" in caps
-            self.log(kind="session_start", client_can_ask=self.client_can_ask)
+            self.log(kind="session_start", client_can_ask=self.client_can_ask, shared_with=self.shared.label)
         elif method == "tools/list" and "id" in msg:
             self.pending_list.add(msg["id"])
         elif method == "tools/call" and "id" in msg:
@@ -95,10 +97,17 @@ class Proxy:
             return
         self.to_server(msg)
 
+    def sync(self) -> None:
+        """Take in what other proxies in this session have read."""
+        for src in self.shared.sources():
+            if self.session.add_source(src):
+                self.log(kind="shared_taint", source=src)
+
     def on_call(self, msg: dict) -> None:
         params = msg.get("params") or {}
         name, args = params.get("name", ""), params.get("arguments") or {}
         tool = self.tool(name)
+        self.sync()
         d = rules.decide(tool, args, self.session, self.config)
         self.log(kind="decision", tool=name, args=args, verdict=d.verdict, rule=d.rule,
                  tainted=self.session.tainted, sources=list(self.session.sources))
@@ -129,6 +138,7 @@ class Proxy:
             self.refuse(original, f"The user declined: {tool.name} ({d.rule}). Do not retry it another way.")
             return
         # Approval satisfies "ask" but never "deny": decide again with the state as it is now.
+        self.sync()
         again = rules.decide(tool, (original.get("params") or {}).get("arguments") or {}, self.session, self.config)
         if again.verdict == rules.DENY:
             self.refuse(original, f"Blocked by Agent Do/Don't ({again.rule}).")
@@ -158,7 +168,8 @@ class Proxy:
             tool = self.pending_calls.pop(mid)
             ok = "result" in msg and not (msg.get("result") or {}).get("isError", False)
             was = self.session.tainted
-            self.session.note_result(tool, ok)
+            if self.session.note_result(tool, ok):
+                self.shared.add(tool.untrusted_output, self.name)
             self.log(kind="result", tool=tool.name, ok=ok, tainted=self.session.tainted,
                      newly_tainted=self.session.tainted and not was)
         self.to_client(msg)
@@ -222,4 +233,6 @@ def main(args) -> int:
     except (AttributeError, ValueError):
         pass
     name = args.name or Path(cmd[0]).name
-    return Proxy(cmd, config, Path(args.log), name).run()
+    log = Path(args.log)
+    shared = SharedTaint.open(log.parent / "sessions", args.session or os.environ.get("AGENTDODONT_SESSION"))
+    return Proxy(cmd, config, log, name, shared=shared).run()

@@ -276,6 +276,8 @@ def main(argv: list[str] | None = None) -> int:
     mp.add_argument("--name", help="the server's name in questions and the log (default: the command)")
     mp.add_argument("--log", default=str(__import__("pathlib").Path.home() / ".agentdodont" / "mcp-audit.jsonl"),
                     help="audit log (JSONL)")
+    mp.add_argument("--session", help="share taint with other proxies in this session: default = every proxy started "
+                                      "by the same client; a name = every proxy given that name; none = don't share")
     mp.add_argument("server", nargs=argparse.REMAINDER, help="-- then the MCP server command and its arguments")
     mp.set_defaults(fn=cmd_mcp_proxy)
 
