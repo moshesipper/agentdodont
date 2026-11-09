@@ -281,6 +281,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="audit log (JSONL)")
     mp.add_argument("--session", help="share taint with other proxies in this session: default = every proxy started "
                                       "by the same client; a name = every proxy given that name; none = don't share")
+    mp.add_argument("--preset", help="ready-made tool descriptions for a known server: auto (default: chosen from the server command), a name (filesystem, ...), or none")
     mp.add_argument("server", nargs=argparse.REMAINDER, help="-- then the MCP server command and its arguments")
     mp.set_defaults(fn=cmd_mcp_proxy)
 

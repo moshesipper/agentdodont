@@ -1,0 +1,163 @@
+{
+  "about": "GitHub's official MCP server. Its annotations are good: reads are read-only, writes are possibly irreversible and ask, and everything it returns (issues, pull requests, files) counts as untrusted. What it can't say is where a write goes: repositories are named by owner, which doesn't look like an address. Here the owner (or organization) of every write that puts content somewhere counts as its destination, so once the session has read untrusted content, a write to an owner that isn't in your known_recipients is refused. Add your username and organizations there to be asked instead. Starring is reversible, and starring and notification settings send no data. Gists have no owner argument: creating one always asks.",
+  "checked_against": "github-mcp-server 2.1.0 (--toolsets all)",
+  "match": [
+    "github-mcp-server"
+  ],
+  "tools": {
+    "actions_run_trigger": {
+      "destination_args": {
+        "owner": "recipient"
+      }
+    },
+    "add_comment_to_pending_review": {
+      "destination_args": {
+        "owner": "recipient"
+      }
+    },
+    "add_issue_comment": {
+      "destination_args": {
+        "owner": "recipient"
+      }
+    },
+    "add_reply_to_pull_request_comment": {
+      "destination_args": {
+        "owner": "recipient"
+      }
+    },
+    "assign_copilot_to_issue": {
+      "destination_args": {
+        "owner": "recipient"
+      }
+    },
+    "assign_copilot_to_issue_with_intent": {
+      "destination_args": {
+        "owner": "recipient"
+      }
+    },
+    "create_branch": {
+      "destination_args": {
+        "owner": "recipient"
+      }
+    },
+    "create_or_update_file": {
+      "destination_args": {
+        "owner": "recipient"
+      }
+    },
+    "create_pull_request": {
+      "destination_args": {
+        "owner": "recipient"
+      }
+    },
+    "create_repository": {
+      "destination_args": {
+        "organization": "recipient"
+      }
+    },
+    "create_repository_ruleset": {
+      "destination_args": {
+        "owner": "recipient",
+        "org": "recipient"
+      }
+    },
+    "custom_properties_write": {
+      "destination_args": {
+        "owner": "recipient",
+        "org": "recipient"
+      }
+    },
+    "delete_file": {
+      "destination_args": {
+        "owner": "recipient"
+      }
+    },
+    "discussion_comment_write": {
+      "destination_args": {
+        "owner": "recipient"
+      }
+    },
+    "dismiss_notification": {
+      "sends_data_out": false
+    },
+    "fork_repository": {
+      "destination_args": {
+        "organization": "recipient"
+      }
+    },
+    "issue_write": {
+      "destination_args": {
+        "owner": "recipient",
+        "parent_owner": "recipient"
+      }
+    },
+    "label_write": {
+      "destination_args": {
+        "owner": "recipient"
+      }
+    },
+    "manage_notification_subscription": {
+      "sends_data_out": false
+    },
+    "manage_repository_notification_subscription": {
+      "sends_data_out": false
+    },
+    "mark_all_notifications_read": {
+      "sends_data_out": false
+    },
+    "merge_pull_request": {
+      "destination_args": {
+        "owner": "recipient"
+      }
+    },
+    "projects_write": {
+      "destination_args": {
+        "owner": "recipient",
+        "item_owner": "recipient"
+      }
+    },
+    "pull_request_review_write": {
+      "destination_args": {
+        "owner": "recipient"
+      }
+    },
+    "push_files": {
+      "destination_args": {
+        "owner": "recipient"
+      }
+    },
+    "request_copilot_review": {
+      "destination_args": {
+        "owner": "recipient"
+      }
+    },
+    "star_repository": {
+      "risk": "reversible",
+      "sends_data_out": false
+    },
+    "sub_issue_write": {
+      "destination_args": {
+        "owner": "recipient"
+      }
+    },
+    "unstar_repository": {
+      "risk": "reversible",
+      "sends_data_out": false
+    },
+    "update_issue_comment": {
+      "destination_args": {
+        "owner": "recipient"
+      }
+    },
+    "update_pull_request": {
+      "destination_args": {
+        "owner": "recipient"
+      }
+    },
+    "update_pull_request_branch": {
+      "destination_args": {
+        "owner": "recipient"
+      }
+    }
+  }
+}

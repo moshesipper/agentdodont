@@ -1,0 +1,15 @@
+{
+  "about": "The MCP reference filesystem server. Its annotations are accurate, but it marks every tool as closed-world, so file contents wouldn't count as untrusted. Files are a common way in for injections (a cloned repository's README, a downloaded document), so here anything that returns file contents or names does.",
+  "checked_against": "@modelcontextprotocol/server-filesystem 2.2.0",
+  "match": ["@modelcontextprotocol/server-filesystem", "mcp-server-filesystem"],
+  "tools": {
+    "read_file": {"untrusted_output": true},
+    "read_text_file": {"untrusted_output": true},
+    "read_media_file": {"untrusted_output": true},
+    "read_multiple_files": {"untrusted_output": true},
+    "list_directory": {"untrusted_output": true},
+    "list_directory_with_sizes": {"untrusted_output": true},
+    "directory_tree": {"untrusted_output": true},
+    "search_files": {"untrusted_output": true}
+  }
+}

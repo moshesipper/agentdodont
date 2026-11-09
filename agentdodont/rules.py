@@ -39,16 +39,26 @@ class Destination:
     recipient: bool  # a person / account (vs a site)
 
 
+def is_phone(s: str) -> bool:
+    return bool(_PHONE.match(s)) and 7 <= sum(c.isdigit() for c in s) <= 15
+
+
 def normalize_recipient(s: str) -> str:
+    """Emails and handles compare case-insensitively; phone numbers by their last nine digits."""
     s = s.strip()
-    return s.lower() if "@" in s else "".join(c for c in s if c.isdigit())[-9:]
+    if "@" not in s and is_phone(s):
+        return "".join(c for c in s if c.isdigit())[-9:]
+    return s.lower()
 
 
 def destinations(args: dict, extra: dict[str, str] | None = None) -> list[Destination]:
-    """Every place a call with these arguments could send data. [extra]: arg name -> "site" | "recipient"."""
+    """Every place a call with these arguments could send data. [extra]: arg name -> "site" | "recipient" |
+    "none" (not a destination, e.g. the account the call acts as, or a search query)."""
     out: list[Destination] = []
 
     def walk(key: str, v) -> None:
+        if (extra or {}).get(key) == "none":
+            return
         if isinstance(v, dict):
             for k, x in v.items():
                 walk(str(k), x)
@@ -66,7 +76,7 @@ def destinations(args: dict, extra: dict[str, str] | None = None) -> list[Destin
             if (kind == "site" or k in HOST_ARGS) and _HOST.match(s):
                 out.append(Destination(s.lower(), recipient=False))
             if kind == "recipient" or k in RECIPIENT_ARGS:
-                if _PHONE.match(s) and 7 <= sum(c.isdigit() for c in s) <= 15:
+                if is_phone(s):
                     out.append(Destination(normalize_recipient(s), recipient=True))
                 elif kind == "recipient" and not _EMAIL.search(s) and s:
                     out.append(Destination(s.lower(), recipient=True))  # e.g. a chat channel or handle
@@ -134,8 +144,7 @@ class Config:
             levels=dict(d.get("levels", {})),
             allowed_sites={s.lower() for s in d.get("allowed_sites", [])},
             blocked_sites={s.lower() for s in d.get("blocked_sites", [])},
-            known_recipients={normalize_recipient(s) if ("@" in s or any(c.isdigit() for c in s)) else s.lower()
-                              for s in d.get("known_recipients", [])},
+            known_recipients={normalize_recipient(s) for s in d.get("known_recipients", [])},
             tools=dict(d.get("tools", {})),
             max_calls_per_minute=int(d.get("max_calls_per_minute", 30)),
             tainted_egress=d.get("tainted_egress", DENY),
@@ -204,8 +213,6 @@ def decide(tool: Tool, args: dict, session: Session, config: Config, now: float 
 
     # 3. Taint, and where data would go.
     read = "this session has read untrusted content (" + (", ".join(session.sources) or "unknown") + ")"
-    if session.tainted and tool.risk != NONE:
-        found.append(Decision(ASK, read))
     if tool.sends_data_out:
         for dest in destinations(args, tool.destination_args):
             allowed = (dest.value in config.known_recipients) if dest.recipient else config.site_allowed(dest.value)
@@ -217,9 +224,13 @@ def decide(tool: Tool, args: dict, session: Session, config: Config, now: float 
                 found.append(Decision(ASK, f"{read}, and this would send data to {dest.value}"))
             elif session.tainted:
                 found.append(Decision(config.tainted_egress if config.tainted_egress in (ASK, DENY) else DENY,
-                                      f"{read}, and {dest.value} {where}"))
+                                      f"{read}, and {dest.value} {where} (to be asked instead, add it to "
+                                      f"{'known_recipients' if dest.recipient else 'allowed_sites'} in your rules file)"))
             elif not allowed:
                 found.append(Decision(ASK, f"the agent wants to send data to {dest.value}, which {where}"))
+
+    if session.tainted and tool.risk != NONE and not any(read in d.rule for d in found):
+        found.append(Decision(ASK, read))  # (said once: a destination rule above may already say it)
 
     # 4. Rate limit: a runaway loop.
     while session.recent and session.recent[0][1] < now - 60:

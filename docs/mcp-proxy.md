@@ -83,6 +83,30 @@ directory the client starts it in.
 - **Log.** Every decision, answer and result goes to `~/.agentdodont/mcp-audit.jsonl` (or the
   file given with `--log`). Arguments are logged too, so keep that file private.
 
+## Presets for popular servers
+
+Some servers' annotations miss something the rules need. A preset corrects that for a known
+server, and the proxy picks it automatically from the server's command. `--preset NAME` picks
+one by name, and `--preset none` turns presets off. The audit log's `session_start` line says
+which preset is in use.
+
+A preset only describes tools: what's allowed stays in your rules file, whose `tools` settings
+win over the preset's field by field. Tools a preset doesn't list keep the server's own
+annotations.
+
+| Server | What its preset corrects |
+|---|---|
+| fetch (`mcp-server-fetch`) | No preset needed: its labels are right. Pages count as untrusted, and the URL is checked against your sites. |
+| filesystem (`@modelcontextprotocol/server-filesystem`) | It labels every tool as closed-world, so file contents wouldn't count as untrusted. Files are a common way in for injections (a cloned repository's README, a downloaded document), so with the preset, the tools that return file contents or names taint the session. Metadata (`get_file_info`, `list_allowed_directories`) doesn't. |
+| GitHub (`github-mcp-server`, the official one) | Its labels are good: reads are read-only, writes ask, and everything it returns counts as untrusted. What it can't say is where a write goes, because repositories are named by owner, not by an address. With the preset, the owner (or organization) of every write that puts content somewhere is its destination. Once the session has read untrusted content, say a malicious issue, a write to an owner you haven't listed is refused. **Add your username and organizations to `known_recipients`** to be asked instead. Starring is reversible, and starring and notification settings send no data. Creating a gist always asks (it has no owner argument). |
+| Gmail (`workspace-mcp`, its Gmail tools) | Its labels are accurate, and everything it returns counts as untrusted, as it should: email is the classic way in for injections. The problem is the other way round. Every tool takes your own address (`user_google_email`), and searches take queries like `from:bob@example.com`, so without the preset the proxy sees destinations everywhere. Once the session had read any email, even searching your inbox would be refused. With the preset, reading, searching, labels and attachments (saved to your disk) send no data, and your own account isn't a destination. Sending, drafts and filters (a filter can forward your mail) are still checked. Labelling one message is reversible. Its Calendar, Drive and other tools aren't covered yet. |
+
+Each preset names the server version it was checked against.
+[tools/check_presets.py](../tools/check_presets.py) checks each one against its real server:
+every tool it names still exists, it's picked automatically, and after a typical read, an email
+to an unknown address through a second proxy is refused with the preset but only asked about
+without it.
+
 ## Rules file
 
 See [mcp-rules.example.json](../mcp-rules.example.json). Every field is optional.
@@ -91,9 +115,9 @@ See [mcp-rules.example.json](../mcp-rules.example.json). Every field is optional
 |---|---|
 | `allowed_sites` | Sites data may go to (`example.com` also covers its subdomains) |
 | `blocked_sites` | Always refused |
-| `known_recipients` | Email addresses, phone numbers or handles data may go to |
+| `known_recipients` | Email addresses, phone numbers or handles data may go to (for GitHub: your username and organizations) |
 | `levels` | `auto` / `ask` / `deny` per tool name, with `*` wildcards (`delete_*`) |
-| `tools` | Per tool: `risk` (`none` / `reversible` / `irreversible`), `untrusted_output` (`true` / `false` / a description), `sends_data_out`, `destination_args` (`{"arg": "site"}` or `{"arg": "recipient"}`) |
+| `tools` | Per tool: `risk` (`none` / `reversible` / `irreversible`), `untrusted_output` (`true` / `false` / a description), `sends_data_out`, `destination_args` (`{"arg": "site"}`, `{"arg": "recipient"}`, or `{"arg": "none"}` for an argument that isn't a destination, such as the account a call acts as) |
 | `tainted_egress` | `deny` (default) or `ask`: what a tainted session gets for a new destination |
 | `max_calls_per_minute` | Per tool (default 30) |
 

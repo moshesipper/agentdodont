@@ -1,0 +1,65 @@
+{
+  "about": "workspace-mcp (Google Workspace), its Gmail tools. Its annotations are accurate, and everything it returns counts as untrusted, as it should: email is the classic way in for injections. The problem is the other way round: every tool takes your own address (user_google_email), and searches take queries like from:bob@example.com, so without this preset the proxy would see destinations everywhere, and once the session had read any email, even searching your inbox would be refused. Here reading, searching, labels and attachments (saved to your disk) send no data, and your own account isn't a destination. Sending, drafts and filters (a filter can forward your mail) are still checked: an address you haven't listed is refused once the session has read untrusted content. Labelling one message is reversible. The other Workspace tools (Calendar, Drive...) aren't covered yet.",
+  "checked_against": "workspace-mcp 4.1.6 (--tools gmail)",
+  "match": [
+    "workspace-mcp"
+  ],
+  "tools": {
+    "batch_modify_gmail_message_labels": {
+      "sends_data_out": false
+    },
+    "draft_gmail_message": {
+      "destination_args": {
+        "user_google_email": "none",
+        "from_email": "none"
+      }
+    },
+    "get_gmail_attachment_content": {
+      "sends_data_out": false
+    },
+    "get_gmail_message_content": {
+      "sends_data_out": false
+    },
+    "get_gmail_messages_content_batch": {
+      "sends_data_out": false
+    },
+    "get_gmail_thread_content": {
+      "sends_data_out": false
+    },
+    "get_gmail_threads_content_batch": {
+      "sends_data_out": false
+    },
+    "list_gmail_filters": {
+      "sends_data_out": false
+    },
+    "list_gmail_labels": {
+      "sends_data_out": false
+    },
+    "manage_gmail_filter": {
+      "destination_args": {
+        "user_google_email": "none"
+      }
+    },
+    "manage_gmail_label": {
+      "sends_data_out": false
+    },
+    "modify_gmail_message_labels": {
+      "risk": "reversible",
+      "sends_data_out": false
+    },
+    "search_gmail_messages": {
+      "sends_data_out": false
+    },
+    "send_gmail_message": {
+      "destination_args": {
+        "user_google_email": "none",
+        "from_email": "none"
+      }
+    },
+    "start_google_auth": {
+      "destination_args": {
+        "user_google_email": "none"
+      }
+    }
+  }
+}

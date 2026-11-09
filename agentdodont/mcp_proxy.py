@@ -31,15 +31,16 @@ import threading
 import time
 from pathlib import Path
 
-from . import rules
+from . import presets, rules
 from .shared import SharedTaint
 
 
 class Proxy:
     def __init__(self, server_cmd: list[str], config: rules.Config, log_path: Path, name: str,
-                 client_in=None, client_out=None, shared: SharedTaint | None = None):
+                 client_in=None, client_out=None, shared: SharedTaint | None = None, preset: str | None = None):
         self.config = config
         self.name = name
+        self.preset = preset
         self.session = rules.Session()
         self.shared = shared or SharedTaint(None, "not shared")
         self.tools: dict[str, rules.Tool] = {}
@@ -89,7 +90,8 @@ class Proxy:
         if method == "initialize":
             caps = (msg.get("params") or {}).get("capabilities") or {}
             self.client_can_ask = "elicitation" in caps
-            self.log(kind="session_start", client_can_ask=self.client_can_ask, shared_with=self.shared.label)
+            self.log(kind="session_start", client_can_ask=self.client_can_ask, shared_with=self.shared.label,
+                     preset=self.preset)
         elif method == "tools/list" and "id" in msg:
             self.pending_list.add(msg["id"])
         elif method == "tools/call" and "id" in msg:
@@ -227,6 +229,14 @@ def main(args) -> int:
     if resolved:
         cmd = [resolved, *cmd[1:]]
     config = rules.Config.load(args.rules)
+    preset = getattr(args, "preset", None)
+    preset = presets.detect(cmd) if preset in (None, "auto") else (None if preset == "none" else preset)
+    if preset:
+        try:
+            config.tools = presets.merge_tools(presets.load(preset), config.tools)
+        except ValueError as e:
+            print(f"agentdodont mcp-proxy: {e}", file=sys.stderr)
+            return 2
     try:
         sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # the protocol channel: "\n" only
         sys.stdin.reconfigure(encoding="utf-8")
@@ -235,4 +245,4 @@ def main(args) -> int:
     name = args.name or Path(cmd[0]).name
     log = Path(args.log)
     shared = SharedTaint.open(log.parent / "sessions", args.session or os.environ.get("AGENTDODONT_SESSION"))
-    return Proxy(cmd, config, log, name, shared=shared).run()
+    return Proxy(cmd, config, log, name, shared=shared, preset=preset).run()

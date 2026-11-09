@@ -26,6 +26,8 @@ email server.
   not asked. Before that, a new address asks.
 - **Risk.** It reads the server's tool annotations the cautious way. A tool with no annotations
   counts as possibly irreversible and asks.
+- **Presets.** Built-in corrections for popular servers (filesystem, GitHub, Gmail via workspace-mcp) are picked
+  automatically from the server's command.
 - **Your settings.** You can set any tool to "do it", "ask" or "never", and there's a rate limit.
 - **Asking.** Questions appear in the client (MCP elicitation). If the client can't ask, the call
   is refused, never run silently.

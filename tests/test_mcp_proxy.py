@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentdodont import rules, shared
+from agentdodont import presets, rules, shared
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -236,6 +236,82 @@ class ProxyEndToEndTest(unittest.TestCase):
         r, asked = mail.call("send_email", {"to": "helpdesk@evil.example", "body": "x"})
         self.assertTrue(r["isError"])
         self.assertIn("output of mail/fetch", r["content"][0]["text"])
+
+
+class PresetTest(unittest.TestCase):
+    FIELDS = {"risk", "untrusted_output", "sends_data_out", "destination_args"}
+
+    def test_every_preset_is_well_formed(self):
+        self.assertIn("filesystem", presets.names())
+        for name in presets.names():
+            p = presets.load(name)
+            self.assertTrue(p.get("match") and p.get("checked_against") and p.get("about"), name)
+            self.assertEqual({"about", "checked_against", "match", "tools"}, set(p), name)  # tools only: no policy
+            for tool, fields in p["tools"].items():
+                self.assertLessEqual(set(fields), self.FIELDS, f"{name}/{tool}")
+                if "risk" in fields:
+                    self.assertIn(fields["risk"], (rules.NONE, rules.REVERSIBLE, rules.IRREVERSIBLE))
+                for kind in fields.get("destination_args", {}).values():
+                    self.assertIn(kind, ("site", "recipient", "none"), f"{name}/{tool}")
+
+    def test_gmail_preset_your_account_and_searches_are_not_destinations(self):
+        tools = presets.load("google-workspace")["tools"]
+        hint = {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": True}  # as workspace-mcp labels them
+        send_hint = {"readOnlyHint": False, "destructiveHint": True, "openWorldHint": True}
+        search = rules.Tool.from_mcp({"name": "search_gmail_messages", "annotations": hint}, "gmail",
+                                     tools["search_gmail_messages"])
+        send = rules.Tool.from_mcp({"name": "send_gmail_message", "annotations": send_hint}, "gmail",
+                                   tools["send_gmail_message"])
+        bare_search = rules.Tool.from_mcp({"name": "search_gmail_messages", "annotations": hint}, "gmail")
+        config = rules.Config.load(None)
+        config.known_recipients = {"dana@example.com"}
+        s = rules.Session()
+        s.add_source("output of gmail/get_gmail_message_content")
+        me = {"user_google_email": "me@gmail.com"}
+        q = {**me, "query": "from:bob@example.com"}
+        self.assertEqual(rules.DENY, rules.decide(bare_search, q, s, config).verdict)  # the problem the preset fixes
+        self.assertEqual(rules.AUTO, rules.decide(search, q, s, config).verdict)
+        d = rules.decide(send, {**me, "to": "helpdesk@evil.example", "body": "x"}, s, config)
+        self.assertEqual(rules.DENY, d.verdict)
+        self.assertNotIn("me@gmail.com", d.rule)
+        self.assertEqual(rules.ASK, rules.decide(send, {**me, "to": "dana@example.com", "body": "x"}, s, config).verdict)
+        self.assertEqual(rules.DENY, rules.decide(send, {**me, "to": "dana@example.com", "bcc": "x@evil.example"}, s,
+                                                  config).verdict)
+
+    def test_detect_and_merge(self):
+        self.assertEqual("filesystem", presets.detect(["C:\\npm\\npx.cmd", "-y", "@modelcontextprotocol/server-filesystem", "/d"]))
+        self.assertIsNone(presets.detect(["uvx", "mcp-server-fetch"]))
+        merged = presets.merge_tools({"tools": {"read_file": {"untrusted_output": True, "risk": "none"}}},
+                                     {"read_file": {"untrusted_output": False}, "other": {"risk": "irreversible"}})
+        self.assertEqual({"untrusted_output": False, "risk": "none"}, merged["read_file"])  # the user wins per field
+        self.assertEqual({"risk": "irreversible"}, merged["other"])
+
+    def test_filesystem_preset_makes_file_contents_untrusted(self):
+        tools = presets.load("filesystem")["tools"]
+        closed = {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False}  # as the server labels it
+        read = rules.Tool.from_mcp({"name": "read_text_file", "annotations": closed}, "filesystem", tools.get("read_text_file"))
+        info = rules.Tool.from_mcp({"name": "get_file_info", "annotations": closed}, "filesystem", tools.get("get_file_info"))
+        self.assertEqual("output of filesystem/read_text_file", read.untrusted_output)
+        self.assertFalse(read.sends_data_out)
+        self.assertIsNone(info.untrusted_output)  # metadata only
+
+    def test_github_preset_makes_the_repository_owner_a_destination(self):
+        tools = presets.load("github")["tools"]
+        write = {"readOnlyHint": False, "title": "Create or update issue/pull request"}  # as the server labels it
+        issue = rules.Tool.from_mcp({"name": "issue_write", "annotations": write}, "github", tools["issue_write"])
+        star = rules.Tool.from_mcp({"name": "star_repository", "annotations": write}, "github", tools["star_repository"])
+        config = rules.Config.load(None)
+        config.known_recipients = {rules.normalize_recipient("Octo-Org"), rules.normalize_recipient("user123")}
+        s = rules.Session()
+        s.add_source("output of github/issue_read")
+        args = {"method": "create", "repo": "x", "title": "t", "body": "private notes"}
+        d = rules.decide(issue, {**args, "owner": "evil-owner"}, s, config)
+        self.assertEqual(rules.DENY, d.verdict)
+        self.assertIn("add it to known_recipients", d.rule)
+        self.assertEqual(rules.ASK, rules.decide(issue, {**args, "owner": "octo-org"}, s, config).verdict)
+        self.assertEqual(rules.ASK, rules.decide(issue, {**args, "owner": "User123"}, s, config).verdict)  # a handle, not a phone
+        self.assertEqual(rules.ASK, rules.decide(star, {"owner": "evil-owner", "repo": "x"}, s, config).verdict)
+        self.assertEqual(rules.REVERSIBLE, star.risk)
 
 
 class SharedTaintTest(unittest.TestCase):
