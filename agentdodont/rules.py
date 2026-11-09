@@ -114,13 +114,19 @@ def norm_path(s: str) -> str:
         s = s[7:]
     if s.startswith("~"):
         s = os.path.expanduser(s)
-    s = s.replace("\\", "/")
+    s = re.sub(r"^/{2,}", "/", s.replace("\\", "/"))  # file:////x, //x: normpath would keep the "//"
     if re.match(r"^/[A-Za-z]:/", s):
         s = s[1:]
     if os.name == "nt" and re.match(r"^/[A-Za-z](/|$)", s):  # Git Bash and MSYS: /c/Users -> c:/Users
         s = s[1] + ":/" + s[3:]
     s = posixpath.normpath(s) if s else s
-    s = re.sub(r"^/{2,}", "/", s)  # normpath keeps a leading "//" (file:////x, //x/../y)
+    if _is_abs(s.casefold()):
+        # One file, one name: symbolic links, and on Windows 8.3 short names (C:\PROGRA~1),
+        # resolve to the real path (as far as it exists).
+        try:
+            s = os.path.realpath(s).replace("\\", "/")
+        except (OSError, ValueError):
+            pass
     return s.casefold()
 
 

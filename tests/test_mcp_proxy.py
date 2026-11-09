@@ -105,6 +105,25 @@ class RulesTest(unittest.TestCase):
         ]
         for args in allowed:
             self.assertEqual(rules.AUTO, rules.decide(self.fetch if "url" not in args else self.note, args, s, c).verdict, args)
+        # Another name for the same file: a symbolic link, or a Windows 8.3 short name.
+        with tempfile.TemporaryDirectory() as d:
+            real = Path(d).resolve() / "long folder name" / "rules.json"
+            real.parent.mkdir()
+            real.write_text("{}")
+            c2 = rules.Config()
+            c2.protect(real)
+            other = None
+            if os.name == "nt":
+                import ctypes
+                buf = ctypes.create_unicode_buffer(1024)
+                if ctypes.windll.kernel32.GetShortPathNameW(str(real), buf, 1024) and buf.value != str(real):
+                    other = buf.value
+            else:
+                link = Path(d) / "link"
+                link.symlink_to(real.parent)
+                other = str(link / "rules.json")
+            if other:
+                self.assertEqual(rules.DENY, rules.decide(self.fetch, {"path": other}, s, c2).verdict, other)
         # Moving or deleting a folder that holds a protected file takes it along: refused.
         self.assertEqual(rules.DENY, rules.decide(self.note, {"source": os.path.join(home, "work")}, s, c).verdict)
         self.assertEqual(rules.DENY, rules.decide(self.note, {"path": "work"}, s, c).verdict)
