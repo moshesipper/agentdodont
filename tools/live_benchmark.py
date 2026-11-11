@@ -22,7 +22,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
-PKG = "dev.aos.launcher"
+PKG = "dev.agentdodont.app"
 RECEIVER = f"{PKG}/.DebugAgentReceiver"
 TASK_TIMEOUT_S = 240
 BENCH_EVENT = "Gym (bench)"

@@ -68,7 +68,7 @@ What it does **not** guarantee is just as important. Read the [threat model](doc
                                       runs · audit log · undo entry
 ```
 
-- The engine ([Policy.kt](android/app/src/main/java/dev/aos/launcher/capabilities/Policy.kt)) is
+- The engine ([Policy.kt](android/app/src/main/java/dev/agentdodont/app/capabilities/Policy.kt)) is
   plain Kotlin with no Android or model dependencies, so it's deterministic and unit-tested.
 - Every applicable rule is evaluated and the **strictest verdict wins**. No approval overrides a refusal.
 - Irreversible actions (send, delete, pay) **always ask**, whatever the settings.
@@ -157,6 +157,11 @@ stays on the computer, in a small program (the relay) that the phone reaches Cla
    from the computer. Every release is signed with the same key, certificate SHA-256
    `89:92:9E:39:47:1B:F6:2F:DB:19:D8:4D:BB:21:12:CB:D5:33:AD:8A:F4:BF:19:4A:D2:70:2C:BA:F1:2D:2A:F4`.
 
+   **Coming from 0.2.x?** Since 0.3.0 the app's ID is `dev.agentdodont.app` (it was
+   `dev.aos.launcher`), so Android installs it as a new app next to the old one. Uninstall the
+   old one (`adb uninstall dev.aos.launcher`), pair the new one, and then cut the old pairing off
+   with `relay --revoke`. The old app's History, memory and permissions don't carry over.
+
 3. **Pair the phone:** run `agentdodont relay --pair`, scan the QR code with the phone's camera,
    and confirm on the phone. If your firewall asks, allow the relay on private networks.
 
@@ -164,7 +169,7 @@ stays on the computer, in a small program (the relay) that the phone reaches Cla
 
 Then, on the phone:
 
-- **Set it as the home screen** (optional): `adb shell cmd package set-home-activity dev.aos.launcher/.MainActivity`.
+- **Set it as the home screen** (optional): `adb shell cmd package set-home-activity dev.agentdodont.app/.MainActivity`.
   To undo: Settings › Apps › Default apps › Home app.
 - **Grant what you want to use:** calendar and contacts permissions when asked; **Notification
   access** for reading notifications; **Settings › Accessibility › Agent Do/Don't** for

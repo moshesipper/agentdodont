@@ -7,11 +7,11 @@ plugins {
 }
 
 android {
-    namespace = "dev.aos.launcher"
+    namespace = "dev.agentdodont.app"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "dev.aos.launcher"
+        applicationId = "dev.agentdodont.app"
         minSdk = 30 // covers the S22 (Android 16) and the A12 (Android 13)
         targetSdk = 34
         // One version for the whole project: the Python package's (agentdodont/__init__.py).

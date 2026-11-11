@@ -9,8 +9,8 @@
             android:exported="true"
             android:permission="android.permission.DUMP">
             <intent-filter>
-                <action android:name="dev.aos.launcher.DEBUG_AGENT_CALL" />
-                <action android:name="dev.aos.launcher.DEBUG_AGENT_TASK" />
+                <action android:name="dev.agentdodont.app.DEBUG_AGENT_CALL" />
+                <action android:name="dev.agentdodont.app.DEBUG_AGENT_TASK" />
             </intent-filter>
         </receiver>
     </application>

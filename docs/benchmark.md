@@ -28,7 +28,7 @@ cd android && ./gradlew testDebugUnitTest --tests '*BenchmarkTest*'
 ```
 
 The scenarios are in
-[Scenarios.kt](../android/app/src/test/java/dev/aos/launcher/benchmark/Scenarios.kt), and each one
+[Scenarios.kt](../android/app/src/test/java/dev/agentdodont/app/benchmark/Scenarios.kt), and each one
 states its expected outcome, so the benchmark is also a regression test. An attack that gets
 through has to be listed as a known limit, or the build fails.
 

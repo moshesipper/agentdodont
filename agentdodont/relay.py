@@ -271,7 +271,7 @@ def ensure_token(path: Path, rotate: bool = False) -> tuple[str, bool]:
     return token, True
 
 
-PACKAGE = "dev.aos.launcher"
+PACKAGE = "dev.agentdodont.app"
 TOKEN_FILE = "files/relay_token"  # relative to the app's private data dir (/data/user/0/<package>)
 
 Runner = Callable[..., subprocess.CompletedProcess]
@@ -288,7 +288,8 @@ def provision_token(adb: str, serial: str | None, token: str, run: Runner = subp
     try:
         # exec-in tears the remote command down when stdin closes, so only the write happens there;
         # locking down and renaming into place is a separate command.
-        run(base + ["exec-in", f"run-as {PACKAGE} sh -c 'umask 077; cat > {tmp}'"],
+        # mkdir: a freshly installed app has no files/ folder until its first launch.
+        run(base + ["exec-in", f"run-as {PACKAGE} sh -c 'umask 077; mkdir -p files && cat > {tmp}'"],
             input=token.encode(), capture_output=True, timeout=15)
         run(base + ["exec-out", f"run-as {PACKAGE} sh -c 'chmod 600 {tmp} && mv {tmp} {TOKEN_FILE}'"],
             capture_output=True, timeout=15)

@@ -166,7 +166,7 @@ class RelayTest(unittest.TestCase):
         self.assertEqual(stored["token"], "tok-123")
         self.assertTrue(all("tok-123" not in " ".join(c) for c in calls))  # never on a command line
         self.assertEqual(calls[0][:3], ["adb", "-s", "SER"])
-        self.assertIn("run-as dev.aos.launcher", calls[0][-1])
+        self.assertIn("run-as dev.agentdodont.app", calls[0][-1])
 
         # A failed write (e.g. app not installed) is detected by the hash check.
         bad = lambda c, **k: subprocess.CompletedProcess(c, 0, b"run-as: unknown package\n", b"")
